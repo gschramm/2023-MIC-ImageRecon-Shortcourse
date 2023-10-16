@@ -964,7 +964,7 @@ class DemoPETScannerLORDescriptor(RegularPolygonPETLORDescriptor):
                          max_ring_difference=max_ring_difference)
 
 
-class DemoPETNonTOFProjector(parallelproj.LinearOperator):
+class RegularPolygonPETNonTOFProjector(parallelproj.LinearOperator):
 
     def __init__(self,
                  lor_descriptor: RegularPolygonPETLORDescriptor,
@@ -972,7 +972,23 @@ class DemoPETNonTOFProjector(parallelproj.LinearOperator):
                  voxel_size: tuple[float, float, float],
                  img_origin: None | npt.ArrayLike = None,
                  views: None | npt.ArrayLike = None):
+        """Regular polygon PET projector
 
+        Parameters
+        ----------
+        lor_descriptor : RegularPolygonPETLORDescriptor
+            descriptor of the LOR start / end points
+        img_shape : tuple[int, int, int]
+            shape of the image to be projected
+        voxel_size : tuple[float, float, float]
+            the voxel size of the image to be projected
+        img_origin : None | npt.ArrayLike, optional
+            the origin of the image to be projected, by default None 
+            means that image is "centered" in the scanner
+        views : None | npt.ArrayLike, optional
+            sinogram views to be projected, by default None
+            means that all views are being projected
+        """
         # uses v1.5 version of parallelproj.LinearOperator
         # v>1.5 does not take xp argument anymore
         super().__init__(lor_descriptor.xp)
@@ -1012,12 +1028,12 @@ class DemoPETNonTOFProjector(parallelproj.LinearOperator):
                 self._lor_descriptor.num_planes)
 
     def _apply(self, x):
-        """forward step y = Ax"""
+        """nonTOF forward projection of input image x"""
         return parallelproj.joseph3d_fwd(self._xstart, self._xend, x,
                                          self._img_origin, self._voxel_size)
 
     def _adjoint(self, y):
-        """adjoint step x = A^H y"""
+        """nonTOF back projection of sinogram y"""
         return parallelproj.joseph3d_back(self._xstart, self._xend,
                                           self._img_shape, self._img_origin,
                                           self._voxel_size, y)

@@ -58,7 +58,8 @@ img[(n0 // 4):(3 * n0 // 4), (n1 // 4):(3 * n1 // 4), :] = 1
 #----------------------------------------------------------------------------
 #----------------------------------------------------------------------------
 
-projector = utils.DemoPETNonTOFProjector(lor_descriptor, img_shape, voxel_size)
+projector = utils.RegularPolygonPETNonTOFProjector(lor_descriptor, img_shape,
+                                                   voxel_size)
 
 img_fwd = projector(img)
 back_img = projector.adjoint(img_fwd)
