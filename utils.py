@@ -10,6 +10,8 @@ from mpl_toolkits.mplot3d.art3d import Line3DCollection
 from types import ModuleType
 from array_api_compat import to_device, size
 
+import parallelproj
+
 
 class SinogramSpatialAxisOrder(enum.Enum):
     """order of spatial axis in a sinogram R (radial), V (view), P (plane)"""
@@ -953,10 +955,69 @@ class DemoPETScannerLORDescriptor(RegularPolygonPETLORDescriptor):
                  symmetry_axis: int = 2) -> None:
 
         scanner = DemoPETScanner(xp,
-                                dev,
-                                num_rings,
-                                symmetry_axis=symmetry_axis)
+                                 dev,
+                                 num_rings,
+                                 symmetry_axis=symmetry_axis)
 
         super().__init__(scanner,
                          radial_trim=radial_trim,
                          max_ring_difference=max_ring_difference)
+
+
+class DemoPETNonTOFProjector(parallelproj.LinearOperator):
+
+    def __init__(self,
+                 lor_descriptor: RegularPolygonPETLORDescriptor,
+                 img_shape: tuple[int, int, int],
+                 voxel_size: tuple[float, float, float],
+                 img_origin: None | npt.ArrayLike = None,
+                 views: None | npt.ArrayLike = None):
+
+        # uses v1.5 version of parallelproj.LinearOperator
+        # v>1.5 does not take xp argument anymore
+        super().__init__(lor_descriptor.xp)
+        self._dev = lor_descriptor.dev
+
+        self._lor_descriptor = lor_descriptor
+        self._img_shape = img_shape
+        self._voxel_size = self._xp.asarray(voxel_size,
+                                            dtype=self._xp.float32,
+                                            device=self._dev)
+
+        if img_origin is None:
+            self._img_origin = (-(self._xp.asarray(
+                self._img_shape, dtype=self._xp.float32, device=self._dev) / 2)
+                                + 0.5) * self._voxel_size
+        else:
+            self._img_origin = self._xp.asarray(img_origin,
+                                                dtype=self._xp.float32,
+                                                device=self._dev)
+
+        if views is None:
+            self._views = self._xp.arange(self._lor_descriptor.num_views,
+                                          device=self._dev)
+        else:
+            self._views = views
+
+        self._xstart, self._xend = lor_descriptor.get_lor_coordinates(
+            views=self._views, sinogram_order=SinogramSpatialAxisOrder['RVP'])
+
+    @property
+    def in_shape(self) -> tuple[int, int, int]:
+        return self._img_shape
+
+    @property
+    def out_shape(self) -> tuple[int, int, int]:
+        return (self._lor_descriptor.num_rad, self._views.shape[0],
+                self._lor_descriptor.num_planes)
+
+    def _apply(self, x):
+        """forward step y = Ax"""
+        return parallelproj.joseph3d_fwd(self._xstart, self._xend, x,
+                                         self._img_origin, self._voxel_size)
+
+    def _adjoint(self, y):
+        """adjoint step x = A^H y"""
+        return parallelproj.joseph3d_back(self._xstart, self._xend,
+                                          self._img_shape, self._img_origin,
+                                          self._voxel_size, y)

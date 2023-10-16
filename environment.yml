@@ -4,7 +4,7 @@ channels:
   - conda-forge
 
 dependencies:
-  - parallelproj>=1.5
+  - parallelproj=1.5
   - h5py
   - scipy
   - ipython
