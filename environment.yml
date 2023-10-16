@@ -1,0 +1,24 @@
+name: 2023-MIC-ImageRecon-Shortcourse
+
+channels:
+  - conda-forge
+
+dependencies:
+  - parallelproj>=1.5
+  - h5py
+  - scipy
+  - ipython
+  - array-api-compat
+  - matplotlib
+  - pytorch>=2.0
+  - torchmetrics
+  - nibabel
+  - ipython
+  - jupyter
+  - jupyter_nbextensions_configurator
+  - jupytext
+  - ipydrawio
+  - ipydrawio-export
+
+  # optional for GPU mode
+  # - cupy
