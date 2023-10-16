@@ -634,7 +634,7 @@ class DemoPETScanner(RegularPolygonPETScannerGeometry):
                  num_rings: int = 36,
                  symmetry_axis: int = 2) -> None:
 
-        ring_positions = 5.31556 * xp.arange(
+        ring_positions = 5.32 * xp.arange(
             num_rings, device=dev, dtype=xp.float32) + (xp.astype(
                 xp.arange(num_rings, device=dev) // 9, xp.float32)) * 2.8
         ring_positions -= 0.5 * xp.max(ring_positions)
