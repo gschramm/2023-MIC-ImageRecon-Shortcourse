@@ -1,10 +1,10 @@
-name: 2023-MIC-ImageRecon-Shortcourse
+name: 2023-MIC-ImageRecon-ShortCourse
 
 channels:
   - conda-forge
 
 dependencies:
-  - parallelproj=1.5
+  - parallelproj>=1.6
   - h5py
   - scipy
   - ipython

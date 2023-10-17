@@ -989,28 +989,27 @@ class RegularPolygonPETNonTOFProjector(parallelproj.LinearOperator):
             sinogram views to be projected, by default None
             means that all views are being projected
         """
-        # uses v1.5 version of parallelproj.LinearOperator
-        # v>1.5 does not take xp argument anymore
-        super().__init__(lor_descriptor.xp)
+
+        super().__init__()
         self._dev = lor_descriptor.dev
 
         self._lor_descriptor = lor_descriptor
         self._img_shape = img_shape
-        self._voxel_size = self._xp.asarray(voxel_size,
-                                            dtype=self._xp.float32,
+        self._voxel_size = self.xp.asarray(voxel_size,
+                                            dtype=self.xp.float32,
                                             device=self._dev)
 
         if img_origin is None:
-            self._img_origin = (-(self._xp.asarray(
-                self._img_shape, dtype=self._xp.float32, device=self._dev) / 2)
+            self._img_origin = (-(self.xp.asarray(
+                self._img_shape, dtype=self.xp.float32, device=self._dev) / 2)
                                 + 0.5) * self._voxel_size
         else:
-            self._img_origin = self._xp.asarray(img_origin,
-                                                dtype=self._xp.float32,
+            self._img_origin = self.xp.asarray(img_origin,
+                                                dtype=self.xp.float32,
                                                 device=self._dev)
 
         if views is None:
-            self._views = self._xp.arange(self._lor_descriptor.num_views,
+            self._views = self.xp.arange(self._lor_descriptor.num_views,
                                           device=self._dev)
         else:
             self._views = views
@@ -1026,6 +1025,10 @@ class RegularPolygonPETNonTOFProjector(parallelproj.LinearOperator):
     def out_shape(self) -> tuple[int, int, int]:
         return (self._lor_descriptor.num_rad, self._views.shape[0],
                 self._lor_descriptor.num_planes)
+
+    @property
+    def xp(self) -> ModuleType:
+        return self._lor_descriptor.xp
 
     def _apply(self, x):
         """nonTOF forward projection of input image x"""
