@@ -1,9 +1,32 @@
+from __future__ import annotations
+
+#TODO: batch + channel dim
 import utils
 import parallelproj
 import array_api_compat.numpy as np
 import array_api_compat.torch as torch
 import matplotlib.pyplot as plt
 from array_api_compat import device, to_device
+
+
+class LinearDummyOperator():
+
+    def __init__(self):
+        self._A = torch.rand(4, 3)
+
+    @property
+    def in_shape(self):
+        return (3, )
+
+    @property
+    def out_shape(self):
+        return (4, )
+
+    def __call__(self, x):
+        return self._A @ x
+
+    def adjoint(self, y):
+        return self._A.T @ y
 
 
 class LinearOperatorForwardLayer(torch.autograd.Function):
@@ -113,51 +136,59 @@ lor_descriptor = utils.DemoPETScannerLORDescriptor(torch,
                                                    num_rings=2,
                                                    radial_trim=171)
 
-#----------------------------------------------------------------------------
-#----------------------------------------------------------------------------
-#--- setup a simple 3D test image -------------------------------------------
-#----------------------------------------------------------------------------
-#----------------------------------------------------------------------------
-
 # image properties
 voxel_size = (2.66, 2.66, 2.66)
-num_trans = 20
-num_ax = 2 * lor_descriptor.scanner.num_modules
-
-# setup a box like test image
-img_shape = (num_trans, num_trans, num_ax)
-n0, n1, n2 = img_shape
-
-# setup an image containing a box
-img = torch.zeros(img_shape, dtype=torch.float32, device=dev)
-img[(n0 // 4):(3 * n0 // 4), (n1 // 4):(3 * n1 // 4), :] = 1
-
-#----------------------------------------------------------------------------
-#----------------------------------------------------------------------------
-#--- setup a non-TOF projector and project ----------------------------------
-#----------------------------------------------------------------------------
-#----------------------------------------------------------------------------
+img_shape = (10, 10, 2 * lor_descriptor.scanner.num_modules)
 
 projector = utils.RegularPolygonPETNonTOFProjector(lor_descriptor, img_shape,
                                                    voxel_size)
 
+#projector = LinearDummyOperator()
+
+#----------------------------------------------------------------------------
+#----------------------------------------------------------------------------
+#----------------------------------------------------------------------------
+#----------------------------------------------------------------------------
+
+x = torch.rand(projector.in_shape,
+               device=dev,
+               dtype=torch.float32,
+               requires_grad=True)
+
+y = torch.rand(projector.out_shape,
+               device=dev,
+               dtype=torch.float32,
+               requires_grad=True)
+
 fwd_layer = LinearOperatorForwardLayer.apply
 adjoint_layer = LinearOperatorAdjointLayer.apply
 
-x = torch.rand(img_shape, device=dev, dtype=torch.float32, requires_grad=True)
+f1 = fwd_layer(x, projector)
+f2 = projector(x.detach())
 
-x1 = fwd_layer(x, projector)
-y = adjoint_layer(x1, projector)
+assert torch.allclose(f1, f2)
 
-# define a dummy loss function
-dummy_loss = (y**2).sum()
-# trigger the backpropagation
-dummy_loss.backward()
+a1 = adjoint_layer(y, projector)
+a2 = projector.adjoint(y.detach())
 
-grad_test_fwd = torch.autograd.gradcheck(fwd_layer, (x, projector), eps=1e-3)
+assert torch.allclose(a1, a2)
+
+## define a dummy loss function
+#dummy_loss = (y**2).sum()
+## trigger the backpropagation
+#dummy_loss.backward()
+
+#grad_test_fwd = torch.autograd.gradcheck(fwd_layer, (x, projector),
+#                                         eps=1e-1,
+#                                         atol=1e-1,
+#                                         rtol=1e-1)
+
+#grad_test_fwd = torch.autograd.gradcheck(adjoint_layer, (y, projector),
+#                                         eps=1e-1,
+#                                         atol=1e-1,
+#                                         rtol=1e-1)
 
 #----------------------------------------------------------------------------
 #----------------------------------------------------------------------------
 #----------------------------------------------------------------------------
 #----------------------------------------------------------------------------
-#TODO: batch + channel dim

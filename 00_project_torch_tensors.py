@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import utils
 import parallelproj
 import array_api_compat.numpy as np
