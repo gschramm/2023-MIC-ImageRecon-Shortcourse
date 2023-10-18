@@ -2,15 +2,40 @@ from __future__ import annotations
 
 import enum
 import abc
+from dataclasses import dataclass
 import array_api_compat.numpy as np
 import numpy.typing as npt
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 from types import ModuleType
-from array_api_compat import to_device, size
+from array_api_compat import device, to_device, size
 
 import parallelproj
+
+
+@dataclass
+class TOFParameters:
+    """
+    generic time of flight (TOF) parameters for a scanner with 385ps FWHM TOF
+
+    num_tofbins: int
+        number of time of flight bins
+    tofbin_width: float
+        width of the TOF bin in spatial units (mm)
+    sigma_tof: float
+        standard deviation of Gaussian TOF kernel in spatial units (mm)
+    num_sigmas: float
+        number of sigmas after which TOF kernel is truncated
+    tofcenter_offset: float
+        offset of center of central TOF bin from LOR center in spatial units (mm)
+    """
+    num_tofbins: int = 29
+    tofbin_width: float = 13 * 0.01302 * 299.792 / 2  # 13 TOF "small" TOF bins of 0.01302[ns] * (speed of light / 2) [mm/ns]
+    sigma_tof: float = (299.792 / 2) * (
+        0.385 / 2.355)  # (speed_of_light [mm/ns] / 2) * TOF FWHM [ns] / 2.355
+    num_sigmas: float = 3.
+    tofcenter_offset: float = 0
 
 
 class SinogramSpatialAxisOrder(enum.Enum):
@@ -972,7 +997,8 @@ class RegularPolygonPETNonTOFProjector(parallelproj.LinearOperator):
                  voxel_size: tuple[float, float, float],
                  img_origin: None | npt.ArrayLike = None,
                  views: None | npt.ArrayLike = None,
-                 resolution_model: None | parallelproj.LinearOperator = None):
+                 resolution_model: None | parallelproj.LinearOperator = None,
+                 tof: bool = False):
         """Regular polygon PET projector
 
         Parameters
@@ -992,6 +1018,8 @@ class RegularPolygonPETNonTOFProjector(parallelproj.LinearOperator):
         resolution_model : None | parallelproj.LinearOperator, optional
             an image-based resolution model applied before forward projection, by default None
             means an isotropic 4.5mm FWHM Gaussian smoothing is used
+        tof: bool, optional, default False
+            whether to use non-TOF or TOF projections
         """
 
         super().__init__()
@@ -1000,8 +1028,8 @@ class RegularPolygonPETNonTOFProjector(parallelproj.LinearOperator):
         self._lor_descriptor = lor_descriptor
         self._img_shape = img_shape
         self._voxel_size = self.xp.asarray(voxel_size,
-                                            dtype=self.xp.float32,
-                                            device=self._dev)
+                                           dtype=self.xp.float32,
+                                           device=self._dev)
 
         if img_origin is None:
             self._img_origin = (-(self.xp.asarray(
@@ -1009,22 +1037,27 @@ class RegularPolygonPETNonTOFProjector(parallelproj.LinearOperator):
                                 + 0.5) * self._voxel_size
         else:
             self._img_origin = self.xp.asarray(img_origin,
-                                                dtype=self.xp.float32,
-                                                device=self._dev)
+                                               dtype=self.xp.float32,
+                                               device=self._dev)
 
         if views is None:
             self._views = self.xp.arange(self._lor_descriptor.num_views,
-                                          device=self._dev)
+                                         device=self._dev)
         else:
             self._views = views
 
         if resolution_model is None:
-            self._resolution_model = parallelproj.GaussianFilterOperator(self.in_shape, sigma = 4.5 / (2.355 * float(self._voxel_size[0])))
+            self._resolution_model = parallelproj.GaussianFilterOperator(
+                self.in_shape,
+                sigma=4.5 / (2.355 * float(self._voxel_size[0])))
         else:
             self._resolution_model = resolution_model
 
         self._xstart, self._xend = lor_descriptor.get_lor_coordinates(
             views=self._views, sinogram_order=SinogramSpatialAxisOrder['RVP'])
+
+        self._tof = tof
+        self._tof_parameters = TOFParameters()
 
     @property
     def in_shape(self) -> tuple[int, int, int]:
@@ -1032,22 +1065,83 @@ class RegularPolygonPETNonTOFProjector(parallelproj.LinearOperator):
 
     @property
     def out_shape(self) -> tuple[int, int, int]:
-        return (self._lor_descriptor.num_rad, self._views.shape[0],
-                self._lor_descriptor.num_planes)
+        if self.tof:
+            out_shape = (self._lor_descriptor.num_rad, self._views.shape[0],
+                         self._lor_descriptor.num_planes,
+                         self.tof_parameters.num_tofbins)
+        else:
+            out_shape = (self._lor_descriptor.num_rad, self._views.shape[0],
+                         self._lor_descriptor.num_planes)
+
+        return out_shape
 
     @property
     def xp(self) -> ModuleType:
         return self._lor_descriptor.xp
 
+    @property
+    def tof(self) -> bool:
+        return self._tof
+
+    @tof.setter
+    def tof(self, value: bool) -> None:
+        if not isinstance(value, bool):
+            raise ValueError('tof must be a boolean')
+        self._tof = value
+
+    @property
+    def tof_parameters(self) -> TOFParameters:
+        return self._tof_parameters
+
+    @tof_parameters.setter
+    def tof_parameters(self, value: TOFParameters) -> None:
+        if not isinstance(value, TOFParameters):
+            raise ValueError('tof_parameters must be a TOFParameters object')
+        self._tof_parameters = value
+
     def _apply(self, x):
         """nonTOF forward projection of input image x including image based resolution model"""
+
+        dev = device(x)
         x_sm = self._resolution_model(x)
-        return parallelproj.joseph3d_fwd(self._xstart, self._xend, x_sm,
-                                         self._img_origin, self._voxel_size)
+
+        if not self.tof:
+            x_fwd = parallelproj.joseph3d_fwd(self._xstart, self._xend, x_sm,
+                                              self._img_origin,
+                                              self._voxel_size)
+        else:
+            x_fwd = parallelproj.joseph3d_fwd_tof_sino(
+                self._xstart, self._xend, x_sm, self._img_origin,
+                self._voxel_size, self._tof_parameters.tofbin_width,
+                self.xp.asarray([self._tof_parameters.sigma_tof],
+                                dtype=self.xp.float32,
+                                device=dev),
+                self.xp.asarray([self._tof_parameters.tofcenter_offset],
+                                dtype=self.xp.float32,
+                                device=dev), self.tof_parameters.num_sigmas,
+                self.tof_parameters.num_tofbins)
+
+        return x_fwd
 
     def _adjoint(self, y):
         """nonTOF back projection of sinogram y"""
-        tmp = parallelproj.joseph3d_back(self._xstart, self._xend,
-                                          self._img_shape, self._img_origin,
-                                          self._voxel_size, y)
-        return self._resolution_model.adjoint(tmp)
+        dev = device(y)
+
+        if not self.tof:
+            y_back = parallelproj.joseph3d_back(self._xstart, self._xend,
+                                                self._img_shape,
+                                                self._img_origin,
+                                                self._voxel_size, y)
+        else:
+            y_back = parallelproj.joseph3d_back_tof_sino(
+                self._xstart, self._xend, self._img_shape, self._img_origin,
+                self._voxel_size, y, self._tof_parameters.tofbin_width,
+                self.xp.asarray([self._tof_parameters.sigma_tof],
+                                dtype=self.xp.float32,
+                                device=dev),
+                self.xp.asarray([self._tof_parameters.tofcenter_offset],
+                                dtype=self.xp.float32,
+                                device=dev), self.tof_parameters.num_sigmas,
+                self.tof_parameters.num_tofbins)
+
+        return self._resolution_model.adjoint(y_back)
