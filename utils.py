@@ -971,7 +971,8 @@ class RegularPolygonPETNonTOFProjector(parallelproj.LinearOperator):
                  img_shape: tuple[int, int, int],
                  voxel_size: tuple[float, float, float],
                  img_origin: None | npt.ArrayLike = None,
-                 views: None | npt.ArrayLike = None):
+                 views: None | npt.ArrayLike = None,
+                 resolution_model: None | parallelproj.LinearOperator = None):
         """Regular polygon PET projector
 
         Parameters
@@ -988,6 +989,9 @@ class RegularPolygonPETNonTOFProjector(parallelproj.LinearOperator):
         views : None | npt.ArrayLike, optional
             sinogram views to be projected, by default None
             means that all views are being projected
+        resolution_model : None | parallelproj.LinearOperator, optional
+            an image-based resolution model applied before forward projection, by default None
+            means an isotropic 4.5mm FWHM Gaussian smoothing is used
         """
 
         super().__init__()
@@ -1014,6 +1018,11 @@ class RegularPolygonPETNonTOFProjector(parallelproj.LinearOperator):
         else:
             self._views = views
 
+        if resolution_model is None:
+            self._resolution_model = parallelproj.GaussianFilterOperator(self.in_shape, sigma = 4.5 / (2.355 * float(self._voxel_size[0])))
+        else:
+            self._resolution_model = resolution_model
+
         self._xstart, self._xend = lor_descriptor.get_lor_coordinates(
             views=self._views, sinogram_order=SinogramSpatialAxisOrder['RVP'])
 
@@ -1031,12 +1040,14 @@ class RegularPolygonPETNonTOFProjector(parallelproj.LinearOperator):
         return self._lor_descriptor.xp
 
     def _apply(self, x):
-        """nonTOF forward projection of input image x"""
-        return parallelproj.joseph3d_fwd(self._xstart, self._xend, x,
+        """nonTOF forward projection of input image x including image based resolution model"""
+        x_sm = self._resolution_model(x)
+        return parallelproj.joseph3d_fwd(self._xstart, self._xend, x_sm,
                                          self._img_origin, self._voxel_size)
 
     def _adjoint(self, y):
         """nonTOF back projection of sinogram y"""
-        return parallelproj.joseph3d_back(self._xstart, self._xend,
+        tmp = parallelproj.joseph3d_back(self._xstart, self._xend,
                                           self._img_shape, self._img_origin,
                                           self._voxel_size, y)
+        return self._resolution_model.adjoint(tmp)
