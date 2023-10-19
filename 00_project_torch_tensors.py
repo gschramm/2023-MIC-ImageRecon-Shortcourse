@@ -67,6 +67,8 @@ img[(n0 // 4):(3 * n0 // 4), (n1 // 4):(3 * n1 // 4), :] = 1
 projector = utils.RegularPolygonPETNonTOFProjector(lor_descriptor, img_shape,
                                                    voxel_size)
 
+projector.tof = True  # set this to True to get a time of flight projector
+
 img_fwd = projector(img)
 back_img = projector.adjoint(img_fwd)
 
@@ -82,7 +84,10 @@ print('back projection (A^TAx) .:', back_img.shape, type(back_img),
 
 fig2, ax2 = plt.subplots(1, 3, figsize=(15, 5))
 ax2[0].imshow(np.asarray(to_device(img[:, :, 3], 'cpu')))
-ax2[1].imshow(np.asarray(to_device(img_fwd[:, :, 4], 'cpu')))
+if projector.tof:
+    ax2[1].imshow(np.asarray(to_device(img_fwd[:, :, 4, 15], 'cpu')))
+else:
+    ax2[1].imshow(np.asarray(to_device(img_fwd[:, :, 4], 'cpu')))
 ax2[2].imshow(np.asarray(to_device(back_img[:, :, 3], 'cpu')))
 fig2.tight_layout()
 fig2.show()
