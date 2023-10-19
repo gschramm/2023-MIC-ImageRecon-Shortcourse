@@ -67,7 +67,7 @@ img[(n0 // 4):(3 * n0 // 4), (n1 // 4):(3 * n1 // 4), :] = 1
 projector = utils.RegularPolygonPETNonTOFProjector(lor_descriptor, img_shape,
                                                    voxel_size)
 
-projector.tof = True  # set this to True to get a time of flight projector
+projector.tof = False  # set this to True to get a time of flight projector
 
 img_fwd = projector(img)
 back_img = projector.adjoint(img_fwd)

@@ -1048,8 +1048,7 @@ class RegularPolygonPETNonTOFProjector(parallelproj.LinearOperator):
 
         if resolution_model is None:
             self._resolution_model = parallelproj.GaussianFilterOperator(
-                self.in_shape,
-                sigma=4.5 / (2.355 * float(self._voxel_size[0])))
+                self.in_shape, sigma=4.5 / (2.355 * self._voxel_size))
         else:
             self._resolution_model = resolution_model
 
