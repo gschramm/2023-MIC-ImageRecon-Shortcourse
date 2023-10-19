@@ -6,13 +6,15 @@ from array_api_compat import device
 
 # see also: https://pytorch.org/tutorials/beginner/examples_autograd/two_layer_net_custom_function.html
 
-class LinearSingleChannel3DOperator(torch.autograd.Function):
+
+class LinearSingleChannelOperator(torch.autograd.Function):
     """
-    Function representing a linear operator acting on a mini batch of single channel 3D images
+    Function representing a linear operator acting on a mini batch of single channel images
     """
 
     @staticmethod
-    def forward(ctx, x: torch.Tensor, operator: parallelproj.LinearOperator) -> torch.Tensor:
+    def forward(ctx, x: torch.Tensor,
+                operator: parallelproj.LinearOperator) -> torch.Tensor:
         """forward pass of the linear operator
 
         Parameters
@@ -29,19 +31,19 @@ class LinearSingleChannel3DOperator(torch.autograd.Function):
         torch.Tensor
             mini batch of 3D images with dimension (batch_size, 1, opertor.out_shape)
         """
-       
+
         ctx.set_materialize_grads(False)
         ctx.operator = operator
 
         batch_size = x.shape[0]
-        y = torch.zeros((batch_size,1) + operator.out_shape, dtype = x.dtype, 
-                        device = device(x))
-
+        y = torch.zeros((batch_size, ) + operator.out_shape,
+                        dtype=x.dtype,
+                        device=device(x))
 
         # loop over all samples in the batch and apply linear operator
         # to the first channel
         for i in range(batch_size):
-            y[i,0,:,:,:] = operator(x[i,0,:,:,:].detach())
+            y[i, ...] = operator(x[i, 0, ...].detach())
 
         return y
 
@@ -61,7 +63,7 @@ class LinearSingleChannel3DOperator(torch.autograd.Function):
         torch.Tensor, None
             mini batch of 3D images with dimension (batch_size, 1, opertor.in_shape)
         """
- 
+
         #For details on how to implement the backward pass, see
         #https://pytorch.org/docs/stable/notes/extending.html#how-to-use
 
@@ -73,23 +75,26 @@ class LinearSingleChannel3DOperator(torch.autograd.Function):
             operator = ctx.operator
 
             batch_size = grad_output.shape[0]
-            x = torch.zeros((batch_size,1) + operator.in_shape, dtype = grad_output.dtype, 
-                            device = device(grad_output))
-            
+            x = torch.zeros((batch_size, 1) + operator.in_shape,
+                            dtype=grad_output.dtype,
+                            device=device(grad_output))
+
             # loop over all samples in the batch and apply linear operator
             # to the first channel
             for i in range(batch_size):
-                x[i,0,:,:,:] = operator.adjoint(grad_output[i,0,:,:,:].detach())
+                x[i, 0, ...] = operator.adjoint(grad_output[i, ...].detach())
 
             return x, None
 
 
-class AdjointLinearSingleChannel3DOperator(torch.autograd.Function):
+class AdjointLinearSingleChannelOperator(torch.autograd.Function):
     """
-    Function representing the adjoint of a linear operator acting on a mini batch of single channel 3D images
+    Function representing the adjoint of a linear operator acting on a mini batch of single channel images
     """
+
     @staticmethod
-    def forward(ctx, x: torch.Tensor, operator: parallelproj.LinearOperator) -> torch.Tensor:
+    def forward(ctx, x: torch.Tensor,
+                operator: parallelproj.LinearOperator) -> torch.Tensor:
         """forward pass of the adjoint of the linear operator
 
         Parameters
@@ -106,23 +111,21 @@ class AdjointLinearSingleChannel3DOperator(torch.autograd.Function):
         torch.Tensor
             mini batch of 3D images with dimension (batch_size, 1, opertor.in_shape)
         """
- 
+
         ctx.set_materialize_grads(False)
         ctx.operator = operator
 
         batch_size = x.shape[0]
-        y = torch.zeros((batch_size,1) + operator.in_shape, dtype = x.dtype, 
-                        device = device(x))
-
+        y = torch.zeros((batch_size, 1) + operator.in_shape,
+                        dtype=x.dtype,
+                        device=device(x))
 
         # loop over all samples in the batch and apply linear operator
         # to the first channel
         for i in range(batch_size):
-            y[i,0,:,:,:] = operator.adjoint(x[i,0,:,:,:].detach())
+            y[i, 0, ...] = operator.adjoint(x[i, ...].detach())
 
         return y
-
-
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -140,7 +143,7 @@ class AdjointLinearSingleChannel3DOperator(torch.autograd.Function):
         torch.Tensor, None
             mini batch of 3D images with dimension (batch_size, 1, opertor.out_shape)
         """
- 
+
         #For details on how to implement the backward pass, see
         #https://pytorch.org/docs/stable/notes/extending.html#how-to-use
 
@@ -152,13 +155,13 @@ class AdjointLinearSingleChannel3DOperator(torch.autograd.Function):
             operator = ctx.operator
 
             batch_size = grad_output.shape[0]
-            x = torch.zeros((batch_size,1) + operator.out_shape, dtype = grad_output.dtype, 
-                            device = device(grad_output))
-            
+            x = torch.zeros((batch_size, ) + operator.out_shape,
+                            dtype=grad_output.dtype,
+                            device=device(grad_output))
+
             # loop over all samples in the batch and apply linear operator
             # to the first channel
             for i in range(batch_size):
-                x[i,0,:,:,:] = operator(grad_output[i,0,:,:,:].detach())
+                x[i, ...] = operator(grad_output[i, 0, ...].detach())
 
             return x, None
-
