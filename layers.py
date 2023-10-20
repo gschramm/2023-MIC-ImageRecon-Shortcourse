@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import torch
+import array_api_compat.torch as torch
 import parallelproj
 from array_api_compat import device
-
-# see also: https://pytorch.org/tutorials/beginner/examples_autograd/two_layer_net_custom_function.html
-
 
 class LinearSingleChannelOperator(torch.autograd.Function):
     """
     Function representing a linear operator acting on a mini batch of single channel images
     """
+
+    # see also: https://pytorch.org/tutorials/beginner/examples_autograd/two_layer_net_custom_function.html
 
     @staticmethod
     def forward(ctx, x: torch.Tensor,
@@ -166,3 +165,51 @@ class AdjointLinearSingleChannelOperator(torch.autograd.Function):
                 x[i, ...] = operator(grad_output[i, 0, ...].detach())
 
             return x, None
+
+
+class EMUpdateModule(torch.nn.Module):
+
+    def __init__(
+        self,
+        projector: parallelproj.LinearOperator,
+    ) -> None:
+
+        super().__init__()
+        self._projector = projector
+
+        self._fwd_op_layer = LinearSingleChannelOperator.apply
+        self._adjoint_op_layer = AdjointLinearSingleChannelOperator.apply
+
+    def forward(self, x: torch.Tensor, data: torch.Tensor,
+                corrections: torch.Tensor, contamination: torch.Tensor,
+                adjoint_ones: torch.Tensor) -> torch.Tensor:
+        """forward pass of the EM update module
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            mini batch of images with shape (batch_size, 1, *img_shape)
+        data : torch.Tensor
+            mini batch of emission data with shape (batch_size, *data_shape)
+        corrections : torch.Tensor
+            mini batch of multiplicative corrections with shape (batch_size, *data_shape)
+        contamination : torch.Tensor
+            mini batch of additive contamination with shape (batch_size, *data_shape)
+        adjoint_ones : torch.Tensor
+            mini batch of adjoint ones (back projection of multiplicative corrections) with shape (batch_size, 1, *img_shape)
+
+        Returns
+        -------
+        torch.Tensor
+            mini batch of EM updates with shape (batch_size, 1, *img_shape)
+        """
+
+        # remember that all variables contain a mini batch of images / data arrays
+        # and that the fwd / adjoint operator layers directly operate on mini batches
+
+        y = data / (corrections * self._fwd_op_layer(x, self._projector) +
+                    contamination)
+
+        return x * self._adjoint_op_layer(corrections * y,
+                                          self._projector) / adjoint_ones
+

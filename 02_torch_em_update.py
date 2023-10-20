@@ -7,61 +7,7 @@ import array_api_compat.torch as torch
 from array_api_compat import to_device
 import matplotlib.pyplot as plt
 
-from layers import LinearSingleChannelOperator, AdjointLinearSingleChannelOperator
-
-
-class EMUpdateModule(torch.nn.Module):
-
-    def __init__(
-        self,
-        projector: parallelproj.LinearOperator,
-    ) -> None:
-
-        super().__init__()
-        self._projector = projector
-
-        self._fwd_op_layer = LinearSingleChannelOperator.apply
-        self._adjoint_op_layer = AdjointLinearSingleChannelOperator.apply
-
-    def forward(self, x: torch.Tensor, data: torch.Tensor,
-                corrections: torch.Tensor, contamination: torch.Tensor,
-                adjoint_ones: torch.Tensor) -> torch.Tensor:
-        """forward pass of the EM update module
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            mini batch of images with shape (batch_size, 1, *img_shape)
-        data : torch.Tensor
-            mini batch of emission data with shape (batch_size, *data_shape)
-        corrections : torch.Tensor
-            mini batch of multiplicative corrections with shape (batch_size, *data_shape)
-        contamination : torch.Tensor
-            mini batch of additive contamination with shape (batch_size, *data_shape)
-        adjoint_ones : torch.Tensor
-            mini batch of adjoint ones (back projection of multiplicative corrections) with shape (batch_size, 1, *img_shape)
-
-        Returns
-        -------
-        torch.Tensor
-            mini batch of EM updates with shape (batch_size, 1, *img_shape)
-        """
-
-        # remember that all variables contain a mini batch of images / data arrays
-        # and that the fwd / adjoint operator layers directly operate on mini batches
-
-        y = data / (corrections * self._fwd_op_layer(x, self._projector) +
-                    contamination)
-
-        return x * self._adjoint_op_layer(corrections * y,
-                                          self._projector) / adjoint_ones
-
-
-#----------------------------------------------------------------------------
-#----------------------------------------------------------------------------
-#----------------------------------------------------------------------------
-#----------------------------------------------------------------------------
-#----------------------------------------------------------------------------
+from layers import EMUpdateModule
 
 # device variable (cpu or cuda) that determines whether calculations
 # are performed on the cpu or cuda gpu
@@ -161,7 +107,7 @@ x = torch.ones((batch_size, 1) + projector.in_shape,
                device=dev,
                dtype=torch.float32)
 
-num_iter = 20
+num_iter = 50
 for i in range(num_iter):
     print(f'EM iteration {(i+1):03}/{num_iter:03}', end='\r')
     x = em_update_module(x, emission_data_batch, correction_batch,
