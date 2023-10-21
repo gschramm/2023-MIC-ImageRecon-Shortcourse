@@ -15,6 +15,7 @@ class SimpleEMVarNet(torch.nn.Module):
 
     def __init__(self,
                  em_update_module: torch.nn.Module,
+                 device,
                  neural_net: torch.nn.Module | None = None,
                  num_blocks: int = 3) -> None:
 
@@ -26,13 +27,13 @@ class SimpleEMVarNet(torch.nn.Module):
 
         if neural_net is None:
             self._neural_net = torch.nn.Sequential(
-                torch.nn.Conv3d(1, 10, 3, padding='same'),
+                torch.nn.Conv3d(1, 10, 3, padding='same', device = device),
                 torch.nn.ReLU(),
-                torch.nn.Conv3d(10, 10, 3, padding='same'),
+                torch.nn.Conv3d(10, 10, 3, padding='same', device = device),
                 torch.nn.ReLU(),
-                torch.nn.Conv3d(10, 10, 3, padding='same'),
+                torch.nn.Conv3d(10, 10, 3, padding='same', device = device),
                 torch.nn.ReLU(),
-                torch.nn.Conv3d(10, 1, 3, padding='same'),
+                torch.nn.Conv3d(10, 1, 3, padding='same', device = device),
             )
         else:
             self._neural_net = neural_net
@@ -167,7 +168,7 @@ x = torch.ones((batch_size, 1) + projector.in_shape,
                device=dev,
                dtype=torch.float32)
 
-em_var_net = SimpleEMVarNet(em_update_module, neural_net=None)
+em_var_net = SimpleEMVarNet(em_update_module, dev, neural_net=None)
 
 y = em_var_net(x, emission_data_batch, correction_batch, contamination_batch,
                adjoint_ones_batch)

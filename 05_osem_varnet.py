@@ -15,6 +15,7 @@ class SimpleOSEMVarNet(torch.nn.Module):
 
     def __init__(self,
                  osem_update_modules: torch.nn.Module,
+                 device,
                  neural_net: torch.nn.Module | None = None) -> None:
 
         super().__init__()
@@ -27,13 +28,13 @@ class SimpleOSEMVarNet(torch.nn.Module):
 
         if neural_net is None:
             self._neural_net = torch.nn.Sequential(
-                torch.nn.Conv3d(1, 10, 3, padding='same'),
+                torch.nn.Conv3d(1, 10, 3, padding='same', device = device),
                 torch.nn.ReLU(),
-                torch.nn.Conv3d(10, 10, 3, padding='same'),
+                torch.nn.Conv3d(10, 10, 3, padding='same', device = device),
                 torch.nn.ReLU(),
-                torch.nn.Conv3d(10, 10, 3, padding='same'),
+                torch.nn.Conv3d(10, 10, 3, padding='same', device = device),
                 torch.nn.ReLU(),
-                torch.nn.Conv3d(10, 1, 3, padding='same'),
+                torch.nn.Conv3d(10, 1, 3, padding='same', device = device),
             )
         else:
             self._neural_net = neural_net
@@ -101,7 +102,7 @@ subset_projectors = parallelproj.SubsetOperator([
                                            voxel_size,
                                            views=torch.arange(
                                                i, lor_descriptor.num_views,
-                                               num_subsets))
+                                               num_subsets, device = dev))
     for i in range(num_subsets)
 ])
 
@@ -189,7 +190,7 @@ x = torch.ones((batch_size, 1) + subset_projectors.in_shape,
                device=dev,
                dtype=torch.float32)
 
-osem_var_net = SimpleOSEMVarNet(osem_update_modules, neural_net=None)
+osem_var_net = SimpleOSEMVarNet(osem_update_modules, dev, neural_net=None)
 
 subset_order = torch.randperm(num_subsets)
 print(f'OSEM recon')

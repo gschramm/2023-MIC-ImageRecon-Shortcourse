@@ -41,7 +41,7 @@ subset_projectors = parallelproj.SubsetOperator([
                                            voxel_size,
                                            views=torch.arange(
                                                i, lor_descriptor.num_views,
-                                               num_subsets))
+                                               num_subsets, device = dev))
     for i in range(num_subsets)
 ])
 
