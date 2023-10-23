@@ -21,14 +21,18 @@ class SimpleOSEMVarNet(torch.nn.Module):
         super().__init__()
 
         self._osem_update_modules = osem_update_modules
-        self._neural_net_weight = torch.nn.Parameter(torch.tensor(1.0))
 
         self._num_subsets = len(osem_update_modules)
         self._subset_order = torch.randperm(self._num_subsets)
+        self._neural_net_weight = torch.nn.ParameterList([torch.ones(1, device = device) for _ in range(self._num_subsets)])
 
         if neural_net is None:
             self._neural_net = torch.nn.Sequential(
                 torch.nn.Conv3d(1, 10, 3, padding='same', device=device),
+                torch.nn.ReLU(),
+                torch.nn.Conv3d(10, 10, 3, padding='same', device=device),
+                torch.nn.ReLU(),
+                torch.nn.Conv3d(10, 10, 3, padding='same', device=device),
                 torch.nn.ReLU(),
                 torch.nn.Conv3d(10, 10, 3, padding='same', device=device),
                 torch.nn.ReLU(),
@@ -64,7 +68,7 @@ class SimpleOSEMVarNet(torch.nn.Module):
 
             # fusion of EM update and neural net update with trainable weight
             # we use an ReLU activation to ensure that the output of each block is non-negative
-            x = torch.nn.ReLU()(x_em + self._neural_net_weight * x_nn)
+            x = torch.nn.ReLU()(x_em + self._neural_net_weight[j] * x_nn)
 
         return x
 
@@ -99,7 +103,7 @@ lor_descriptor = utils.DemoPETScannerLORDescriptor(torch,
 #----------------------------------------------------------------------------
 
 # image properties
-ids = tuple([i for i in range(39)])
+ids = tuple([i for i in range(40)])
 batch_size = len(ids)
 voxel_size = (2.66, 2.66, 2.66)
 
@@ -116,7 +120,7 @@ img_shape = tuple(emission_image_database.shape[2:])
 #----------------------------------------------------------------------------
 #----------------------------------------------------------------------------
 
-num_subsets = 34
+num_subsets = 4
 
 subset_projectors = parallelproj.SubsetOperator([
     utils.RegularPolygonPETNonTOFProjector(
@@ -177,16 +181,17 @@ loss_fn = torch.nn.MSELoss()
 optimizer = torch.optim.Adam(osem_var_net.parameters(), lr=1e-3)
 
 num_datasets = emission_image_database.shape[0]
-num_epochs = 1
+num_epochs = 100
 batch_size = 5
 
 print('\nmodel training\n')
 
 osem_var_net.train()
 
-for epoch in range(1):
-    batch_inds = torch.split(torch.randperm(num_datasets),
-                             int(ceil(num_datasets / batch_size)))
+loss_arr = torch.zeros(num_epochs)
+
+for epoch in range(num_epochs):
+    batch_inds = torch.split(torch.randperm(num_datasets), batch_size)
 
     for ib, batch_ind in enumerate(batch_inds):
         x_fwd = osem_var_net(osem_database[batch_ind, ...],
@@ -204,3 +209,5 @@ for epoch in range(1):
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
+
+    loss_arr[epoch] = loss

@@ -106,10 +106,8 @@ def load_brain_image(i: int,
     if normalize_emission:
         emission_img = emission_img / scale
 
-    return xp.asarray(to_device(emission_img, dev),
-                      dtype=xp.float32), xp.asarray(to_device(
-                          attenuation_img, dev),
-                                                    dtype=xp.float32)
+    return to_device(xp.asarray(emission_img, dtype=xp.float32), dev), to_device(xp.asarray(
+                          attenuation_img, dtype=xp.float32), dev)
 
 
 def load_brain_image_batch(ids, xp, dev, **kwargs):
