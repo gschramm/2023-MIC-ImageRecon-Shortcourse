@@ -45,13 +45,13 @@ def download_data(
         print('data already present')
 
 
-def load_brain_image(
-        i: int,
-        xp: ModuleType,
-        dev: str,
-        voxel_size: tuple[float, float, float] = (1., 1., 1.),
-        axial_fov_mm: None | float = None,
-        normalize_emission=True) -> tuple[npt.NDArray, npt.NDArray]:
+def load_brain_image(i: int,
+                     xp: ModuleType,
+                     dev: str,
+                     voxel_size: tuple[float, float, float] = (1., 1., 1.),
+                     axial_fov_mm: None | float = None,
+                     normalize_emission: bool = True,
+                     verbose: bool = False) -> tuple[npt.NDArray, npt.NDArray]:
     """load a brainweb PET emission / attenuation data set
 
     Parameters
@@ -69,6 +69,8 @@ def load_brain_image(
         by default None means do not crop axial FOV
     normalize_emission : bool, optional
         divide emission image to maximum, by default True
+    verbose : bool, optional
+        verbose output, by default False
 
     Returns
     -------
@@ -78,9 +80,10 @@ def load_brain_image(
     subject_dirs = sorted(list(Path('data').glob('subject??')))
     subject_index = i // 3
     image_index = i % 3
-    print(
-        f'\rloading image {(i+1):03} {subject_dirs[subject_index]} image_{image_index:03}.nii.gz',
-        end='')
+    if verbose:
+        print(
+            f'\rloading image {(i+1):03} {subject_dirs[subject_index]} image_{image_index:03}.nii.gz'
+        )
     emission_img = nib.load(subject_dirs[subject_index] /
                             f'image_{image_index}.nii.gz').get_fdata()
     scale = emission_img.max()
@@ -107,3 +110,22 @@ def load_brain_image(
                       dtype=xp.float32), xp.asarray(to_device(
                           attenuation_img, dev),
                                                     dtype=xp.float32)
+
+
+def load_brain_image_batch(ids, xp, dev, **kwargs):
+    for i in ids:
+        em_img, att_img = load_brain_image(i, xp, dev, **kwargs)
+
+        if i == 0:
+            img_shape = em_img.shape
+            em_img_batch = xp.zeros((len(ids), 1) + img_shape,
+                                    device=dev,
+                                    dtype=xp.float32)
+            att_img_batch = xp.zeros((len(ids), 1) + img_shape,
+                                     device=dev,
+                                     dtype=xp.float32)
+
+        em_img_batch[i, 0, ...] = em_img
+        att_img_batch[i, 0, ...] = att_img
+
+    return em_img_batch, att_img_batch

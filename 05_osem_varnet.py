@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import utils
 import parallelproj
-import array_api_compat.numpy as np
 import array_api_compat.torch as torch
 from array_api_compat import to_device
-import matplotlib.pyplot as plt
 
 from layers import EMUpdateModule
+from data import load_brain_image, load_brain_image_batch
 
 
 class SimpleOSEMVarNet(torch.nn.Module):
@@ -28,13 +27,13 @@ class SimpleOSEMVarNet(torch.nn.Module):
 
         if neural_net is None:
             self._neural_net = torch.nn.Sequential(
-                torch.nn.Conv3d(1, 10, 3, padding='same', device = device),
+                torch.nn.Conv3d(1, 10, 3, padding='same', device=device),
                 torch.nn.ReLU(),
-                torch.nn.Conv3d(10, 10, 3, padding='same', device = device),
+                torch.nn.Conv3d(10, 10, 3, padding='same', device=device),
                 torch.nn.ReLU(),
-                torch.nn.Conv3d(10, 10, 3, padding='same', device = device),
+                torch.nn.Conv3d(10, 10, 3, padding='same', device=device),
                 torch.nn.ReLU(),
-                torch.nn.Conv3d(10, 1, 3, padding='same', device = device),
+                torch.nn.Conv3d(10, 1, 3, padding='same', device=device),
             )
         else:
             self._neural_net = neural_net
@@ -86,48 +85,45 @@ else:
 
 # setup a line of response descriptor that describes the LOR start / endpoints of
 # a "narrow" clinical PET scanner with 9 rings
-lor_descriptor = utils.DemoPETScannerLORDescriptor(torch, dev, num_rings=4)
+num_rings = 9
+lor_descriptor = utils.DemoPETScannerLORDescriptor(torch, dev, num_rings=9)
+
+#----------------------------------------------------------------------------
+#----------------------------------------------------------------------------
+#--- load the brainweb images -----------------------------------------------
+#----------------------------------------------------------------------------
+#----------------------------------------------------------------------------
 
 # image properties
+ids = (0, 1)
+batch_size = len(ids)
 voxel_size = (2.66, 2.66, 2.66)
-n0 = 160
-n1 = n0
-img_shape = (n0, n1, 2 * lor_descriptor.scanner.num_modules)
+
+emission_image_batch, attenuation_image_batch = load_brain_image_batch(
+    ids,
+    torch,
+    dev,
+    voxel_size=voxel_size,
+    axial_fov_mm=num_rings * voxel_size[2],
+    verbose=True)
+
+img_shape = tuple(emission_image_batch.shape[2:])
+
+#----------------------------------------------------------------------------
+#----------------------------------------------------------------------------
 
 num_subsets = 34
 
 subset_projectors = parallelproj.SubsetOperator([
-    utils.RegularPolygonPETNonTOFProjector(lor_descriptor,
-                                           img_shape,
-                                           voxel_size,
-                                           views=torch.arange(
-                                               i, lor_descriptor.num_views,
-                                               num_subsets, device = dev))
-    for i in range(num_subsets)
+    utils.RegularPolygonPETNonTOFProjector(
+        lor_descriptor,
+        img_shape,
+        voxel_size,
+        views=torch.arange(i,
+                           lor_descriptor.num_views,
+                           num_subsets,
+                           device=dev)) for i in range(num_subsets)
 ])
-
-#----------------------------------------------------------------------------
-#----------------------------------------------------------------------------
-#----------------------------------------------------------------------------
-#----------------------------------------------------------------------------
-
-batch_size = 2
-
-emission_image_batch = torch.zeros(
-    (batch_size, 1) + subset_projectors.in_shape,
-    device=dev,
-    dtype=torch.float32,
-    requires_grad=False)
-
-emission_image_batch[:, 0, (n0 // 4):(3 * n0 // 4),
-                     (n1 // 4):(3 * n1 // 4), :] = 1.
-emission_image_batch[0, 0, (9 * n0 // 16):(11 * n0 // 16),
-                     (9 * n1 // 16):(11 * n1 // 16), :] *= 2
-
-emission_image_batch[1, 0, (5 * n0 // 16):(7 * n0 // 16),
-                     (5 * n1 // 16):(7 * n1 // 16), :] *= 0.5
-
-attenuation_image_batch = 0.01 * (emission_image_batch > 0)
 
 #--------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------
