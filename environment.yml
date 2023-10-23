@@ -12,7 +12,7 @@ dependencies:
   - matplotlib
   - pytorch>=2.0
   - torchmetrics
-  - nibabel
+  - pymirc
   - ipython
   - jupyter
   - jupyter_nbextensions_configurator
