@@ -7,6 +7,7 @@ from array_api_compat import to_device
 
 from layers import EMUpdateModule
 from data import load_brain_image, load_brain_image_batch, simulate_data_batch
+from math import ceil
 
 
 class SimpleOSEMVarNet(torch.nn.Module):
@@ -166,10 +167,40 @@ for i in range(num_osem_iter):
             contamination_database[subset, ...], adjoint_ones_database[subset,
                                                                        ...])
 
-#y = osem_var_net(x, emission_data_database, correction_database, contamination_database,
-#                 adjoint_ones_database)
-#
-## calculate the sum of squared differences loss between y and the true emission images
-#loss = ((y - emission_image_database)**2).sum()
-## backpropagate the gradients
-#loss.backward()
+#--------------------------------------------------------------------------------
+#--------------------------------------------------------------------------------
+# model training
+#--------------------------------------------------------------------------------
+#--------------------------------------------------------------------------------
+
+loss_fn = torch.nn.MSELoss()
+optimizer = torch.optim.Adam(osem_var_net.parameters(), lr=1e-3)
+
+num_datasets = emission_image_database.shape[0]
+num_epochs = 1
+batch_size = 5
+
+print('\nmodel training\n')
+
+osem_var_net.train()
+
+for epoch in range(1):
+    batch_inds = torch.split(torch.randperm(num_datasets),
+                             int(ceil(num_datasets / batch_size)))
+
+    for ib, batch_ind in enumerate(batch_inds):
+        x_fwd = osem_var_net(osem_database[batch_ind, ...],
+                             emission_data_database[:, batch_ind, ...],
+                             correction_database[:, batch_ind, ...],
+                             contamination_database[:, batch_ind, ...],
+                             adjoint_ones_database[:, batch_ind, ...])
+
+        loss = loss_fn(x_fwd, emission_image_database[batch_ind, ...])
+
+        print(f'{(epoch+1):03}/{num_epochs:03} {(ib+1):03} {loss:.2E}',
+              end='\r')
+
+        # Backpropagation
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
