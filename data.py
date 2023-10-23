@@ -6,7 +6,7 @@ from pathlib import Path
 import nibabel as nib
 from pymirc.image_operations import zoom3d
 import array_api_compat.numpy as np
-from array_api_compat import to_device
+from array_api_compat import to_device, device, get_namespace
 from math import ceil
 
 import numpy.typing as npt
@@ -129,3 +129,90 @@ def load_brain_image_batch(ids, xp, dev, **kwargs):
         att_img_batch[i, 0, ...] = att_img
 
     return em_img_batch, att_img_batch
+
+
+def simulate_data_batch(
+    emission_image_batch: npt.NDArray,
+    attenuation_image_batch: npt.NDArray,
+    subset_projectors: npt.NDArray,
+    sens: float = 1.,
+    contam_fraction: float = 0.4
+) -> tuple[npt.NDArray, npt.NDArray, npt.NDArray, npt.NDArray]:
+    """Simulate a batch of emission data from a batch of emission and attenuation images
+
+    Parameters
+    ----------
+    emission_image_batch : npt.NDArray
+        batch of emission images with shape (batch_size, 1, *image_shape)
+    attenuation_image_batch : npt.NDArray
+        batch of attenuation images with shape (batch_size, 1, *image_shape)
+    subset_projectors : npt.NDArray
+        subset projectors
+    sens : float, optional
+        sensitivity value that determines number of prompts, by default 1.
+    contam_fraction : float, optional
+        contamination fraction, by default 0.4
+
+    Returns
+    -------
+    npt.NDArray, npt.NDArray, npt.NDArray, npt.NDArray
+        emission_data_batch, correction_batch, contamination_batch, adjoint_ones_batch
+    """
+    xp = get_namespace(emission_image_batch)
+    dev = device(emission_image_batch)
+
+    num_subsets = subset_projectors.num_subsets
+    batch_size = emission_image_batch.shape[0]
+
+    # mini batch of multiplicative corrections (attenuation and normalization)
+    correction_batch = xp.zeros(
+        (num_subsets, batch_size) + subset_projectors.out_shapes[0],
+        device=dev,
+        dtype=xp.float32)
+
+    # mini batch of emission data
+    emission_data_batch = xp.zeros(
+        (num_subsets, batch_size) + subset_projectors.out_shapes[0],
+        device=dev,
+        dtype=xp.float32)
+
+    # calculate the adjoint ones (back projection of the multiplicative corrections) - sensitivity images
+    adjoint_ones_batch = xp.zeros(
+        (num_subsets, batch_size, 1) + subset_projectors.in_shape,
+        device=dev,
+        dtype=xp.float32)
+
+    # mini batch of additive contamination (scatter)
+    contamination_batch = xp.zeros(
+        (num_subsets, batch_size) + subset_projectors.out_shapes[0],
+        device=dev,
+        dtype=xp.float32)
+
+    for j in range(num_subsets):
+        for i in range(batch_size):
+            correction_batch[
+                j, i, ...] = sens * xp.exp(-subset_projectors.apply_subset(
+                    attenuation_image_batch[i, 0, ...], j))
+
+            adjoint_ones_batch[j, i, 0,
+                               ...] = subset_projectors.adjoint_subset(
+                                   correction_batch[j, i, ...], j)
+
+            emission_data_batch[j, i, ...] = correction_batch[
+                j, i, ...] * subset_projectors.apply_subset(
+                    emission_image_batch[i, 0, ...], j)
+
+            contamination_batch[j, i, ...] = (
+                1 /
+                (1 - contam_fraction)) * emission_data_batch[j, i, ...].mean()
+            emission_data_batch[j, i, ...] += contamination_batch[j, i, ...]
+
+            if 'torch' in xp.__name__:
+                emission_data_batch[j, i,
+                                    ...] = xp.poisson(emission_data_batch[j, i,
+                                                                          ...])
+            else:
+                emission_data_batch[j, i, ...] = xp.random.poisson(
+                    emission_data_batch[j, i, ...])
+
+    return emission_data_batch, correction_batch, contamination_batch, adjoint_ones_batch

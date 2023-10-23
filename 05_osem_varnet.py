@@ -6,7 +6,7 @@ import array_api_compat.torch as torch
 from array_api_compat import to_device
 
 from layers import EMUpdateModule
-from data import load_brain_image, load_brain_image_batch
+from data import load_brain_image, load_brain_image_batch, simulate_data_batch
 
 
 class SimpleOSEMVarNet(torch.nn.Module):
@@ -53,12 +53,11 @@ class SimpleOSEMVarNet(torch.nn.Module):
 
         for j in range(self._num_subsets):
             subset = self._subset_order[j]
-            x_em = osem_update_modules[subset](x, emission_data_batch[subset,
+            x_em = self._osem_update_modules[subset](
+                x, emission_data_batch[subset, ...], correction_batch[subset,
                                                                       ...],
-                                               correction_batch[subset, ...],
-                                               contamination_batch[subset,
-                                                                   ...],
-                                               adjoint_ones_batch[subset, ...])
+                contamination_batch[subset, ...], adjoint_ones_batch[subset,
+                                                                     ...])
 
             x_nn = self._neural_net(x)
 
@@ -85,8 +84,12 @@ else:
 
 # setup a line of response descriptor that describes the LOR start / endpoints of
 # a "narrow" clinical PET scanner with 9 rings
-num_rings = 9
-lor_descriptor = utils.DemoPETScannerLORDescriptor(torch, dev, num_rings=9)
+num_rings = 4
+radial_trim = 181
+lor_descriptor = utils.DemoPETScannerLORDescriptor(torch,
+                                                   dev,
+                                                   num_rings=num_rings,
+                                                   radial_trim=radial_trim)
 
 #----------------------------------------------------------------------------
 #----------------------------------------------------------------------------
@@ -95,11 +98,11 @@ lor_descriptor = utils.DemoPETScannerLORDescriptor(torch, dev, num_rings=9)
 #----------------------------------------------------------------------------
 
 # image properties
-ids = (0, 1)
+ids = tuple([i for i in range(39)])
 batch_size = len(ids)
 voxel_size = (2.66, 2.66, 2.66)
 
-emission_image_batch, attenuation_image_batch = load_brain_image_batch(
+emission_image_database, attenuation_image_database = load_brain_image_batch(
     ids,
     torch,
     dev,
@@ -107,7 +110,7 @@ emission_image_batch, attenuation_image_batch = load_brain_image_batch(
     axial_fov_mm=num_rings * voxel_size[2],
     verbose=True)
 
-img_shape = tuple(emission_image_batch.shape[2:])
+img_shape = tuple(emission_image_database.shape[2:])
 
 #----------------------------------------------------------------------------
 #----------------------------------------------------------------------------
@@ -130,48 +133,10 @@ subset_projectors = parallelproj.SubsetOperator([
 #--------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------
 
-# mini batch of multiplicative corrections (attenuation and normalization)
-correction_batch = torch.zeros(
-    (num_subsets, batch_size) + subset_projectors.out_shapes[0],
-    device=dev,
-    dtype=torch.float32)
+print(f'simulating data')
 
-# mini batch of emission data
-emission_data_batch = torch.zeros(
-    (num_subsets, batch_size) + subset_projectors.out_shapes[0],
-    device=dev,
-    dtype=torch.float32)
-
-# calculate the adjoint ones (back projection of the multiplicative corrections) - sensitivity images
-adjoint_ones_batch = torch.zeros(
-    (num_subsets, batch_size, 1) + subset_projectors.in_shape,
-    device=dev,
-    dtype=torch.float32)
-
-# mini batch of additive contamination (scatter)
-contamination_batch = torch.zeros(
-    (num_subsets, batch_size) + subset_projectors.out_shapes[0],
-    device=dev,
-    dtype=torch.float32)
-
-for j in range(num_subsets):
-    for i in range(batch_size):
-        correction_batch[j, i,
-                         ...] = torch.exp(-subset_projectors.apply_subset(
-                             attenuation_image_batch[i, 0, ...], j))
-
-        adjoint_ones_batch[j, i, 0, ...] = subset_projectors.adjoint_subset(
-            correction_batch[j, i, ...], j)
-
-        emission_data_batch[j, i, ...] = correction_batch[
-            j, i, ...] * subset_projectors.apply_subset(
-                emission_image_batch[i, 0, ...], j)
-
-        contamination_batch[j, i, ...] = emission_data_batch[j, i, ...].mean()
-        emission_data_batch[j, i, ...] += contamination_batch[j, i, ...]
-        emission_data_batch[j, i,
-                            ...] = torch.poisson(emission_data_batch[j, i,
-                                                                     ...])
+emission_data_database, correction_database, contamination_database, adjoint_ones_database = simulate_data_batch(
+    emission_image_database, attenuation_image_database, subset_projectors)
 
 #--------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------
@@ -182,25 +147,29 @@ osem_update_modules = [
     EMUpdateModule(projector) for projector in subset_projectors.operators
 ]
 
-x = torch.ones((batch_size, 1) + subset_projectors.in_shape,
-               device=dev,
-               dtype=torch.float32)
+osem_database = torch.ones((batch_size, 1) + subset_projectors.in_shape,
+                           device=dev,
+                           dtype=torch.float32)
 
 osem_var_net = SimpleOSEMVarNet(osem_update_modules, dev, neural_net=None)
 
-subset_order = torch.randperm(num_subsets)
-print(f'OSEM recon')
-for j in range(num_subsets):
-    subset = subset_order[j]
-    x = osem_update_modules[subset](x, emission_data_batch[subset, ...],
-                                    correction_batch[subset, ...],
-                                    contamination_batch[subset, ...],
-                                    adjoint_ones_batch[subset, ...])
+num_osem_iter = 34 // num_subsets
 
-y = osem_var_net(x, emission_data_batch, correction_batch, contamination_batch,
-                 adjoint_ones_batch)
+for i in range(num_osem_iter):
+    print(f'OSEM iteration {(i+1):003}/{num_osem_iter:003}', end='\r')
+    subset_order = torch.randperm(num_subsets)
+    for j in range(num_subsets):
+        subset = subset_order[j]
+        osem_database = osem_update_modules[subset](
+            osem_database, emission_data_database[subset, ...],
+            correction_database[subset, ...],
+            contamination_database[subset, ...], adjoint_ones_database[subset,
+                                                                       ...])
 
-# calculate the sum of squared differences loss between y and the true emission images
-loss = ((y - emission_image_batch)**2).sum()
-# backpropagate the gradients
-loss.backward()
+#y = osem_var_net(x, emission_data_database, correction_database, contamination_database,
+#                 adjoint_ones_database)
+#
+## calculate the sum of squared differences loss between y and the true emission images
+#loss = ((y - emission_image_database)**2).sum()
+## backpropagate the gradients
+#loss.backward()
