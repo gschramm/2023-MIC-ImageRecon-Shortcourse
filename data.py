@@ -5,8 +5,13 @@ from pathlib import Path
 
 import nibabel as nib
 from pymirc.image_operations import zoom3d
-import array_api_compat.numpy as np 
+import array_api_compat.numpy as np
+from array_api_compat import to_device
 from math import ceil
+
+import numpy.typing as npt
+from types import ModuleType
+
 
 def download_data(
         zip_file_url:
@@ -40,28 +45,65 @@ def download_data(
         print('data already present')
 
 
-if __name__ == '__main__':
+def load_brain_image(
+        i: int,
+        xp: ModuleType,
+        dev: str,
+        voxel_size: tuple[float, float, float] = (1., 1., 1.),
+        axial_fov_mm: None | float = None,
+        normalize_emission=True) -> tuple[npt.NDArray, npt.NDArray]:
+    """load a brainweb PET emission / attenuation data set
 
-    i = 10
-    voxel_size = (2.66, 2.66, 2.66)
-    subject_dirs = sorted(list(Path('data').glob('subject??'))) 
-    axial_fov_mm = 9*2.66
+    Parameters
+    ----------
+    i : int
+        ID of the data set (0-59)
+        we have 20 subjects with 3 images each
+    xp : ModuleType
+        array module type to use
+    dev : str
+        device to use (cpu or cuda)
+    voxel_size : None | tuple[float, float, float], optional
+        voxel size, by default (1., 1., 1.)
+    axial_fov_mm : None | float, optional
+        by default None means do not crop axial FOV
+    normalize_emission : bool, optional
+        divide emission image to maximum, by default True
 
+    Returns
+    -------
+    tuple[npt.NDArray, npt.NDArray]
+        normalized emission image and attenuation image (1/mm)
+    """
+    subject_dirs = sorted(list(Path('data').glob('subject??')))
     subject_index = i // 3
     image_index = i % 3
     print(
         f'\rloading image {(i+1):03} {subject_dirs[subject_index]} image_{image_index:03}.nii.gz',
         end='')
-    tmp = nib.load(subject_dirs[subject_index] /
-                   f'image_{image_index}.nii.gz').get_fdata()
-    scale = tmp.max()
+    emission_img = nib.load(subject_dirs[subject_index] /
+                            f'image_{image_index}.nii.gz').get_fdata()
+    scale = emission_img.max()
+
+    attenuation_img = nib.load(subject_dirs[subject_index] /
+                               f'attenuation_image.nii.gz').get_fdata()
 
     if axial_fov_mm is not None:
-        start = int(0.5*tmp.shape[2] - 0.5* axial_fov_mm)
-        stop = int(ceil(start +  axial_fov_mm))
-        tmp = tmp[:,:,start:stop]
-        
+        # clip axial extent of the images
+        start = int(0.5 * emission_img.shape[2] - 0.5 * axial_fov_mm)
+        stop = int(ceil(start + axial_fov_mm))
+        emission_img = emission_img[:, :, start:stop]
+        attenuation_img = attenuation_img[:, :, start:stop]
 
-    # regrid images to desired voxel size
-    tmp = zoom3d(tmp, 1/ np.array(voxel_size))
+    if voxel_size is not None:
+        # regrid images to desired voxel size
+        emission_img = zoom3d(emission_img, 1 / np.array(voxel_size))
+        attenuation_img = zoom3d(attenuation_img, 1 / np.array(voxel_size))
 
+    if normalize_emission:
+        emission_img = emission_img / scale
+
+    return xp.asarray(to_device(emission_img, dev),
+                      dtype=xp.float32), xp.asarray(to_device(
+                          attenuation_img, dev),
+                                                    dtype=xp.float32)
