@@ -1,21 +1,24 @@
 from __future__ import annotations
 
 import torch
+import parallelproj
 from torch.utils.data import Dataset, DataLoader
-from array_api_compat import device
+from array_api_compat import device, to_device
 from pathlib import Path
+from shutil import rmtree
 
+from time import time
 
-def create_dummy_data(root: str = 'data/dummy_data',
+def create_dummy_data(root: str,
                       img_shape: tuple[int, int, int] = (128, 128, 90),
                       sino_shape: tuple[int, ...] = (257, 180, 400),
-                      num_datasets: int = 8) -> None:
+                      num_datasets: int = 15) -> None:
     """create a number of PET dummy data sets (images and sinograms)
 
     Parameters
     ----------
     root : str, optional
-        data root direction, by default 'data/dummy_data'
+        data root direction
     img_shape : tuple[int, int, int], optional
         shape of the images, by default (128, 128, 90)
     sino_shape : tuple[int, ...], optional
@@ -88,7 +91,7 @@ class PETDataSet(Dataset):
         acq_dir = self._acquisition_dirs[idx]
 
         if self._verbose:
-            print(f'loading {acq_dir.name}')
+            print(f'loading {str(acq_dir)}')
 
         sample = {}
         sample['high_quality_image'] = torch.load(acq_dir /
@@ -104,13 +107,32 @@ class PETDataSet(Dataset):
 
         return sample
 
+#--------------------------------------------------------------------------------------
+#--------------------------------------------------------------------------------------
+#--------------------------------------------------------------------------------------
+
+def collate_fn(batch):
+    batch_dict = {}
+    dim = 1
+    for key in batch[0].keys():
+        batch_dict[key] =  torch.stack([x[key] for x in batch], dim = dim)
+
+    return batch_dict
 
 if __name__ == '__main__':
+    if parallelproj.cuda_present:
+        dev = 'cuda'
+    else:
+        dev = 'cpu'
+
     #----------------------------------------------------------------------
     #--- (1) create a dummy data sets -------------------------------------
     #----------------------------------------------------------------------
-    data_root_path = 'data/dummy_data'
-    create_dummy_data(root=data_root_path)
+    data_root_path = '/tmp/dummy_data'
+    create_dummy_data(root=data_root_path,
+                      num_datasets = 8,
+                      img_shape = (128, 128, 90),
+                      sino_shape = (257, 180, 400))
 
 
     #----------------------------------------------------------------------
@@ -133,18 +155,28 @@ if __name__ == '__main__':
                                 batch_size=3,
                                 shuffle=True,
                                 num_workers=0,
-                                pin_memory=True)
+                                pin_memory=True,
+                                collate_fn=collate_fn)
 
-    print('\nloading mini batches - 1st epoch\n')
-    for i_batch, sample_batched in enumerate(pet_dataloader):
-        print('batch id: ', i_batch,
-              sample_batched['high_quality_image'].size(),
-              device(sample['high_quality_image']),
-              sample_batched['emission_sinogram'].size())
+    for epoch in range(5):
+        print('\n--------------------------------')
+        print(f'loading mini batches - epoch {epoch:03}')
+        print('--------------------------------\n')
+        ta = time()
+        for i_batch, sample_batched in enumerate(pet_dataloader):
+            # push tensors to device
+            high_quality_image_batched = to_device(sample_batched['high_quality_image'], dev)
+            sensitivity_image_batched = to_device(sample_batched['sensitivity_image'], dev)
+            emission_sinogram_batched = to_device(sample_batched['emission_sinogram'], dev)
+            correction_sinogram_batched = to_device(sample_batched['correction_sinogram'], dev)
+            contamination_sinogram_batched = to_device(sample_batched['contamination_sinogram'], dev)
 
-    print('\nloading mini batches - 2nd epoch\n')
-    for i_batch, sample_batched in enumerate(pet_dataloader):
-        print('batch id: ', i_batch,
-              sample_batched['high_quality_image'].size(),
-              device(sample['high_quality_image']),
-              sample_batched['emission_sinogram'].size())
+            print('batch id: ', i_batch,
+                  high_quality_image_batched.shape,
+                  device(high_quality_image_batched),
+                  emission_sinogram_batched.shape)
+        tb = time()
+        print(f'\ntime needed to sample mini batch {((tb-ta)/len(pet_dataloader)):.4f}s')
+
+    # delete the temporary data directory
+    rmtree(data_root_path)
