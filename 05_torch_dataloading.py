@@ -9,6 +9,7 @@ from shutil import rmtree
 
 from time import time
 
+
 def create_dummy_data(root: str,
                       img_shape: tuple[int, int, int] = (128, 128, 90),
                       sino_shape: tuple[int, ...] = (257, 180, 400),
@@ -107,17 +108,25 @@ class PETDataSet(Dataset):
 
         return sample
 
+
 #--------------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------------
 
-def collate_fn(batch):
-    batch_dict = {}
-    dim = 1
-    for key in batch[0].keys():
-        batch_dict[key] =  torch.stack([x[key] for x in batch], dim = dim)
 
-    return batch_dict
+class CustomBatchCollator:
+
+    def __init__(self, dim: int = 0) -> None:
+        self._dim = dim
+
+    def __call__(self, batch: dict[list[torch.Tensor]]) -> dict[torch.Tensor]:
+        batch_dict = {}
+        for key in batch[0].keys():
+            batch_dict[key] = torch.stack([x[key] for x in batch],
+                                          dim=self._dim)
+
+        return batch_dict
+
 
 if __name__ == '__main__':
     if parallelproj.cuda_present:
@@ -130,10 +139,9 @@ if __name__ == '__main__':
     #----------------------------------------------------------------------
     data_root_path = '/tmp/dummy_data'
     create_dummy_data(root=data_root_path,
-                      num_datasets = 8,
-                      img_shape = (128, 128, 90),
-                      sino_shape = (257, 180, 400))
-
+                      num_datasets=8,
+                      img_shape=(128, 128, 90),
+                      sino_shape=(257, 180, 400))
 
     #----------------------------------------------------------------------
     #--- (2) create a pytorch dataset object that describes ---------------
@@ -156,7 +164,7 @@ if __name__ == '__main__':
                                 shuffle=True,
                                 num_workers=0,
                                 pin_memory=True,
-                                collate_fn=collate_fn)
+                                collate_fn=CustomBatchCollator(dim=0))
 
     for epoch in range(5):
         print('\n--------------------------------')
@@ -165,18 +173,24 @@ if __name__ == '__main__':
         ta = time()
         for i_batch, sample_batched in enumerate(pet_dataloader):
             # push tensors to device
-            high_quality_image_batched = to_device(sample_batched['high_quality_image'], dev)
-            sensitivity_image_batched = to_device(sample_batched['sensitivity_image'], dev)
-            emission_sinogram_batched = to_device(sample_batched['emission_sinogram'], dev)
-            correction_sinogram_batched = to_device(sample_batched['correction_sinogram'], dev)
-            contamination_sinogram_batched = to_device(sample_batched['contamination_sinogram'], dev)
+            high_quality_image_batched = to_device(
+                sample_batched['high_quality_image'], dev)
+            sensitivity_image_batched = to_device(
+                sample_batched['sensitivity_image'], dev)
+            emission_sinogram_batched = to_device(
+                sample_batched['emission_sinogram'], dev)
+            correction_sinogram_batched = to_device(
+                sample_batched['correction_sinogram'], dev)
+            contamination_sinogram_batched = to_device(
+                sample_batched['contamination_sinogram'], dev)
 
-            print('batch id: ', i_batch,
-                  high_quality_image_batched.shape,
+            print('batch id: ', i_batch, high_quality_image_batched.shape,
                   device(high_quality_image_batched),
                   emission_sinogram_batched.shape)
         tb = time()
-        print(f'\ntime needed to sample mini batch {((tb-ta)/len(pet_dataloader)):.4f}s')
+        print(
+            f'\ntime needed to sample mini batch {((tb-ta)/len(pet_dataloader)):.4f}s'
+        )
 
     # delete the temporary data directory
     rmtree(data_root_path)
