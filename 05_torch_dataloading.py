@@ -1,3 +1,7 @@
+""" minimal example that shows how to setup pytorch data sets and data loaders
+    to handle image and sinogram data 
+"""
+
 from __future__ import annotations
 
 import tempfile
