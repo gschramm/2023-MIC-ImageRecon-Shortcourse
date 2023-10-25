@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tempfile
 import torch
 import parallelproj
 from torch.utils.data import Dataset, DataLoader
@@ -35,7 +36,7 @@ def create_dummy_data(root: str,
         acq_dir = (root_dir / f'acquisition_{i:03}')
         acq_dir.mkdir(exist_ok=True)
 
-        print(f'creating {acq_dir.name}', end='\r')
+        print(f'creating dummy data {str(acq_dir)}', end='\r')
 
         torch.save(torch.full(img_shape, 1 + 100 * i, dtype=torch.float32),
                    acq_dir / 'high_quality_image.pt')
@@ -57,6 +58,7 @@ class PETDataSet(Dataset):
     def __init__(self,
                  root_dir: str,
                  pattern: str = 'acquisition_*',
+                 add_channel_dim: bool = True,
                  verbose: bool = False) -> None:
         """
 
@@ -66,6 +68,8 @@ class PETDataSet(Dataset):
             root of data director
         pattern : str, optional
             pattern of sub directories to be included, by default 'acquisition_*'
+        add_channel_dim : bool, optional
+            add an extra channel dimension to all images, by default True
         verbose : bool, optional
             verbose output, by default False
 
@@ -83,6 +87,7 @@ class PETDataSet(Dataset):
         self._pattern: str = pattern
         self._acquisition_dirs: list[Path] = sorted(
             list(self._root_dir.glob(self._pattern)))
+        self._add_channel_dim: bool = add_channel_dim
         self._verbose: bool = verbose
 
     def __len__(self) -> int:
@@ -95,10 +100,19 @@ class PETDataSet(Dataset):
             print(f'loading {str(acq_dir)}')
 
         sample = {}
-        sample['high_quality_image'] = torch.load(acq_dir /
-                                                  'high_quality_image.pt')
-        sample['sensitivity_image'] = torch.load(acq_dir /
-                                                 'sensitivity_image.pt')
+
+        if self._add_channel_dim:
+            # we use unsqueeze to add a channel dimension to the images
+            sample['high_quality_image'] = torch.unsqueeze(
+                torch.load(acq_dir / 'high_quality_image.pt'), 0)
+            sample['sensitivity_image'] = torch.unsqueeze(
+                torch.load(acq_dir / 'sensitivity_image.pt'), 0)
+        else:
+            sample['high_quality_image'] = torch.load(acq_dir /
+                                                      'high_quality_image.pt')
+            sample['sensitivity_image'] = torch.load(acq_dir /
+                                                     'sensitivity_image.pt')
+
         sample['emission_sinogram'] = torch.load(acq_dir /
                                                  'emission_sinogram.pt')
         sample['correction_sinogram'] = torch.load(acq_dir /
@@ -114,19 +128,33 @@ class PETDataSet(Dataset):
 #--------------------------------------------------------------------------------------
 
 
-class CustomBatchCollator:
+def custom_collate_fn(batch: list[dict[torch.Tensor]]) -> dict[torch.Tensor]:
+    """custom collate function for the PET data set that stacks images along
+       the "0" dimension and sinograms along the "1" dimension
 
-    def __init__(self, dim: int = 0) -> None:
-        self._dim = dim
+    Parameters
+    ----------
+    batch : list[dict[torch.Tensor]]
+        list of samples from data set belonging to the same mini batch 
 
-    def __call__(self, batch: dict[list[torch.Tensor]]) -> dict[torch.Tensor]:
-        batch_dict = {}
-        for key in batch[0].keys():
-            batch_dict[key] = torch.stack([x[key] for x in batch],
-                                          dim=self._dim)
+    Returns
+    -------
+    dict[torch.Tensor]
+        dictionary with stacked tensors
+    """
+    batch_dict = {}
+    for key in batch[0].keys():
+        if '_sinogram' in key:
+            batch_dict[key] = torch.stack([x[key] for x in batch], dim=1)
+        else:
+            batch_dict[key] = torch.stack([x[key] for x in batch], dim=0)
 
-        return batch_dict
+    return batch_dict
 
+
+#-----------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------
 
 if __name__ == '__main__':
     if parallelproj.cuda_present:
@@ -137,8 +165,8 @@ if __name__ == '__main__':
     #----------------------------------------------------------------------
     #--- (1) create a dummy data sets -------------------------------------
     #----------------------------------------------------------------------
-    data_root_path = '/tmp/dummy_data'
-    create_dummy_data(root=data_root_path,
+    tmp_data_dir = tempfile.TemporaryDirectory()
+    create_dummy_data(root=tmp_data_dir.name,
                       num_datasets=8,
                       img_shape=(128, 128, 90),
                       sino_shape=(257, 180, 400))
@@ -147,10 +175,14 @@ if __name__ == '__main__':
     #--- (2) create a pytorch dataset object that describes ---------------
     #---     how to load the data                           ---------------
     #----------------------------------------------------------------------
-    pet_dataset = PETDataSet(data_root_path, verbose=True)
+    pet_dataset = PETDataSet(tmp_data_dir.name,
+                             add_channel_dim=True,
+                             verbose=True)
 
     # load a single sample from our data set
-    print('\nloading single data set\n')
+    print('\n-----------------------')
+    print('loading single data set')
+    print('-----------------------\n')
     sample = pet_dataset[0]
     print(sample['high_quality_image'].shape,
           device(sample['high_quality_image']),
@@ -163,16 +195,21 @@ if __name__ == '__main__':
                                 batch_size=3,
                                 shuffle=True,
                                 num_workers=0,
-                                pin_memory=True,
-                                collate_fn=CustomBatchCollator(dim=0))
+                                pin_memory=True)
 
-    for epoch in range(5):
+    # hint: we can also use a custom function to collate the data set samples in a different way
+    # e.g. along a different dimension
+    # to do so use: collate_fn=custom_collate_fn
+
+    for epoch in range(3):
         print('\n--------------------------------')
         print(f'loading mini batches - epoch {epoch:03}')
         print('--------------------------------\n')
         ta = time()
+
+        # loop over the data loader as we would do in a training loop
         for i_batch, sample_batched in enumerate(pet_dataloader):
-            # push tensors to device
+            # push batch tensors to device
             high_quality_image_batched = to_device(
                 sample_batched['high_quality_image'], dev)
             sensitivity_image_batched = to_device(
@@ -184,13 +221,18 @@ if __name__ == '__main__':
             contamination_sinogram_batched = to_device(
                 sample_batched['contamination_sinogram'], dev)
 
-            print('batch id: ', i_batch, high_quality_image_batched.shape,
-                  device(high_quality_image_batched),
-                  emission_sinogram_batched.shape)
+            print(f'batch id: {i_batch}')
+            print(
+                f'...high_quality_image_batch shape / device .: {high_quality_image_batched.shape} / {device(high_quality_image_batched)}'
+            )
+            print(
+                f'...emission_sinogram_batch  shape / device .: {emission_sinogram_batched.shape} / {device(emission_sinogram_batched)}\n'
+            )
+
         tb = time()
         print(
-            f'\ntime needed to sample mini batch {((tb-ta)/len(pet_dataloader)):.4f}s'
+            f'\naverage time needed to sample mini batch {((tb-ta)/len(pet_dataloader)):.4f}s'
         )
 
     # delete the temporary data directory
-    rmtree(data_root_path)
+    tmp_data_dir.cleanup()
