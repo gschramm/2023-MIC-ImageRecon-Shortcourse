@@ -10,6 +10,8 @@ from models import Unet3D
 from data import load_brain_image, load_brain_image_batch, simulate_data_batch
 from math import ceil
 
+import tempfile
+from pathlib import Path
 
 class SimpleOSEMVarNet(torch.nn.Module):
     """dummy cascaded model that includes layers combining projections and convolutions"""
@@ -25,10 +27,11 @@ class SimpleOSEMVarNet(torch.nn.Module):
 
         self._num_subsets = len(osem_update_modules)
         self._subset_order = torch.randperm(self._num_subsets)
-        self._neural_net_weight = torch.nn.ParameterList([torch.ones(1, device = device) for _ in range(self._num_subsets)])
+        self._neural_net_weight = torch.nn.ParameterList(
+            [torch.ones(1, device=device) for _ in range(self._num_subsets)])
 
         if neural_net is None:
-            self._neural_net = Unet3D(num_features = 8).to(device)
+            self._neural_net = Unet3D(num_features=8).to(device)
         else:
             self._neural_net = neural_net
 
@@ -84,7 +87,9 @@ lor_descriptor = utils.DemoPETScannerLORDescriptor(torch,
                                                    dev,
                                                    num_rings=num_rings,
                                                    radial_trim=radial_trim)
-axial_fov_mm = float(lor_descriptor.scanner.num_rings * (lor_descriptor.scanner.ring_positions[1] - lor_descriptor.scanner.ring_positions[0]))
+axial_fov_mm = float(lor_descriptor.scanner.num_rings *
+                     (lor_descriptor.scanner.ring_positions[1] -
+                      lor_descriptor.scanner.ring_positions[0]))
 
 #----------------------------------------------------------------------------
 #----------------------------------------------------------------------------
@@ -103,7 +108,7 @@ emission_image_database, attenuation_image_database = load_brain_image_batch(
     torch,
     dev,
     voxel_size=voxel_size,
-    axial_fov_mm=0.95*axial_fov_mm,
+    axial_fov_mm=0.95 * axial_fov_mm,
     verbose=True)
 
 img_shape = tuple(emission_image_database.shape[2:])
@@ -161,6 +166,7 @@ for i in range(num_osem_iter):
             correction_database[subset, ...],
             contamination_database[subset, ...], adjoint_ones_database[subset,
                                                                        ...])
+                                                                        ...])
 
 #--------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------
@@ -202,3 +208,24 @@ for epoch in range(num_epochs):
         optimizer.zero_grad()
 
     loss_arr[epoch] = loss
+
+output_dir = tempfile.TemporaryDirectory(dir = '.', prefix = 'run_osem_varnet')
+output_path = Path(output_dir.name) / 'model_state.pt'
+torch.save(osem_var_net.state_dict(), output_path.name)
+print(f'save model to {output_path.name}')
+
+##--------------------------------------------------------------------------------
+##--------------------------------------------------------------------------------
+## model evaluation
+##--------------------------------------------------------------------------------
+##--------------------------------------------------------------------------------
+#
+#osem_var_net.load_state_dict(torch.load('osem_varnet_4ss.pt',
+#                                        map_location=dev))
+#osem_var_net.eval()
+#
+#x_fwd = osem_var_net(osem_database[:, ...], emission_data_database[:, :, ...],
+#                     correction_database[:, :, ...],
+#                     contamination_database[:, :,
+#                                            ...], adjoint_ones_database[:, :,
+#

@@ -162,3 +162,4 @@ cython_debug/
 # user defined ignores
 data/*
 *.pt
+run_osem_varnet*
