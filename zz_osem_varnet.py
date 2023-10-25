@@ -6,6 +6,7 @@ import array_api_compat.torch as torch
 from array_api_compat import to_device
 
 from layers import EMUpdateModule
+from models import Unet3D
 from data import load_brain_image, load_brain_image_batch, simulate_data_batch
 from math import ceil
 
@@ -27,19 +28,7 @@ class SimpleOSEMVarNet(torch.nn.Module):
         self._neural_net_weight = torch.nn.ParameterList([torch.ones(1, device = device) for _ in range(self._num_subsets)])
 
         if neural_net is None:
-            self._neural_net = torch.nn.Sequential(
-                torch.nn.Conv3d(1, 10, 3, padding='same', device=device),
-                torch.nn.ReLU(),
-                torch.nn.Conv3d(10, 10, 3, padding='same', device=device),
-                torch.nn.ReLU(),
-                torch.nn.Conv3d(10, 10, 3, padding='same', device=device),
-                torch.nn.ReLU(),
-                torch.nn.Conv3d(10, 10, 3, padding='same', device=device),
-                torch.nn.ReLU(),
-                torch.nn.Conv3d(10, 10, 3, padding='same', device=device),
-                torch.nn.ReLU(),
-                torch.nn.Conv3d(10, 1, 3, padding='same', device=device),
-            )
+            self._neural_net = Unet3D(num_features = 8).to(device)
         else:
             self._neural_net = neural_net
 
@@ -95,6 +84,7 @@ lor_descriptor = utils.DemoPETScannerLORDescriptor(torch,
                                                    dev,
                                                    num_rings=num_rings,
                                                    radial_trim=radial_trim)
+axial_fov_mm = float(lor_descriptor.scanner.num_rings * (lor_descriptor.scanner.ring_positions[1] - lor_descriptor.scanner.ring_positions[0]))
 
 #----------------------------------------------------------------------------
 #----------------------------------------------------------------------------
@@ -105,14 +95,15 @@ lor_descriptor = utils.DemoPETScannerLORDescriptor(torch,
 # image properties
 ids = tuple([i for i in range(40)])
 batch_size = len(ids)
-voxel_size = (2.66, 2.66, 2.66)
+voxel_size = (2.5, 2.5, 2.66)
+#voxel_size = (2.66, 2.66, 2.66)
 
 emission_image_database, attenuation_image_database = load_brain_image_batch(
     ids,
     torch,
     dev,
     voxel_size=voxel_size,
-    axial_fov_mm=num_rings * voxel_size[2],
+    axial_fov_mm=0.95*axial_fov_mm,
     verbose=True)
 
 img_shape = tuple(emission_image_database.shape[2:])
@@ -181,7 +172,7 @@ loss_fn = torch.nn.MSELoss()
 optimizer = torch.optim.Adam(osem_var_net.parameters(), lr=1e-3)
 
 num_datasets = emission_image_database.shape[0]
-num_epochs = 100
+num_epochs = 500
 batch_size = 5
 
 print('\nmodel training\n')

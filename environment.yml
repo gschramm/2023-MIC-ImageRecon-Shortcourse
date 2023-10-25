@@ -19,6 +19,7 @@ dependencies:
   - jupytext
   - ipydrawio
   - ipydrawio-export
+  - tensorboard
 
   # optional for GPU mode
   # - cupy
