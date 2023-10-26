@@ -171,7 +171,7 @@ if __name__ == '__main__':
     #----------------------------------------------------------------------
     tmp_data_dir = tempfile.TemporaryDirectory()
     create_dummy_data(root=tmp_data_dir.name,
-                      num_datasets=8,
+                      num_datasets=9,
                       img_shape=(128, 128, 90),
                       sino_shape=(257, 180, 400))
 
@@ -195,17 +195,18 @@ if __name__ == '__main__':
     #----------------------------------------------------------------------
     #--- (3) create a data loader that can sample mini batches  -----------
     #----------------------------------------------------------------------
+
     pet_dataloader = DataLoader(pet_dataset,
                                 batch_size=3,
                                 shuffle=True,
                                 num_workers=0,
-                                pin_memory=True)
+                                pin_memory=False)
 
     # hint: we can also use a custom function to collate the data set samples in a different way
     # e.g. along a different dimension
     # to do so use: collate_fn=custom_collate_fn
 
-    for epoch in range(3):
+    for epoch in range(6):
         print('\n--------------------------------')
         print(f'loading mini batches - epoch {epoch:03}')
         print('--------------------------------\n')
@@ -214,16 +215,11 @@ if __name__ == '__main__':
         # loop over the data loader as we would do in a training loop
         for i_batch, sample_batched in enumerate(pet_dataloader):
             # push batch tensors to device
-            high_quality_image_batched = to_device(
-                sample_batched['high_quality_image'], dev)
-            sensitivity_image_batched = to_device(
-                sample_batched['sensitivity_image'], dev)
-            emission_sinogram_batched = to_device(
-                sample_batched['emission_sinogram'], dev)
-            correction_sinogram_batched = to_device(
-                sample_batched['correction_sinogram'], dev)
-            contamination_sinogram_batched = to_device(
-                sample_batched['contamination_sinogram'], dev)
+            high_quality_image_batched = sample_batched['high_quality_image'].to(dev)
+            sensitivity_image_batched = sample_batched['sensitivity_image'].to(dev)
+            emission_sinogram_batched = sample_batched['emission_sinogram'].to(dev)
+            correction_sinogram_batched = sample_batched['correction_sinogram'].to(dev)
+            contamination_sinogram_batched = sample_batched['contamination_sinogram'].to(dev)
 
             print(f'batch id: {i_batch}')
             print(
