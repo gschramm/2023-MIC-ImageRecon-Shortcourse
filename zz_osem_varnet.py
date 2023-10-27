@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-# TODO: deeper UNet
-
 import argparse
 import json
 from datetime import datetime
@@ -23,7 +21,7 @@ parser.add_argument('--num_datasets', type=int, default=60)
 parser.add_argument('--num_training', type=int, default=40)
 parser.add_argument('--num_validation', type=int, default=20)
 parser.add_argument('--num_subsets', type=int, default=4)
-parser.add_argument('--depth', type=int, default=8)
+parser.add_argument('--depth', type=int, default=4)
 parser.add_argument('--num_epochs', type=int, default=500)
 parser.add_argument('--num_epochs_post', type=int, default=500)
 parser.add_argument('--batch_size', type=int, default=10)
