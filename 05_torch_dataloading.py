@@ -58,7 +58,6 @@ def create_dummy_data(root: str,
 
 class PETDataSet(Dataset):
     """Dummy PET data set consisting of images and sinograms"""
-
     def __init__(self,
                  root_dir: str,
                  pattern: str = 'acquisition_*',
@@ -215,11 +214,16 @@ if __name__ == '__main__':
         # loop over the data loader as we would do in a training loop
         for i_batch, sample_batched in enumerate(pet_dataloader):
             # push batch tensors to device
-            high_quality_image_batched = sample_batched['high_quality_image'].to(dev)
-            sensitivity_image_batched = sample_batched['sensitivity_image'].to(dev)
-            emission_sinogram_batched = sample_batched['emission_sinogram'].to(dev)
-            correction_sinogram_batched = sample_batched['correction_sinogram'].to(dev)
-            contamination_sinogram_batched = sample_batched['contamination_sinogram'].to(dev)
+            high_quality_image_batched = sample_batched[
+                'high_quality_image'].to(dev)
+            sensitivity_image_batched = sample_batched['sensitivity_image'].to(
+                dev)
+            emission_sinogram_batched = sample_batched['emission_sinogram'].to(
+                dev)
+            correction_sinogram_batched = sample_batched[
+                'correction_sinogram'].to(dev)
+            contamination_sinogram_batched = sample_batched[
+                'contamination_sinogram'].to(dev)
 
             print(f'batch id: {i_batch}')
             print(

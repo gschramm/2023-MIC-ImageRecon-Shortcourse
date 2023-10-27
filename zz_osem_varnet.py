@@ -23,11 +23,11 @@ parser.add_argument('--num_datasets', type=int, default=60)
 parser.add_argument('--num_training', type=int, default=40)
 parser.add_argument('--num_validation', type=int, default=20)
 parser.add_argument('--num_subsets', type=int, default=4)
-parser.add_argument('--depth', type=int, default=4)
+parser.add_argument('--depth', type=int, default=8)
 parser.add_argument('--num_epochs', type=int, default=500)
 parser.add_argument('--num_epochs_post', type=int, default=500)
 parser.add_argument('--batch_size', type=int, default=10)
-parser.add_argument('--num_features', type=int, default=16)
+parser.add_argument('--num_features', type=int, default=8)
 parser.add_argument('--num_rings', type=int, default=4)
 parser.add_argument('--radial_trim', type=int, default=181)
 parser.add_argument('--random_seed', type=int, default=1)
@@ -49,7 +49,7 @@ batch_size = args.batch_size
 num_features = args.num_features
 num_rings = args.num_rings
 radial_trim = args.radial_trim
-random_seed = random_seed
+random_seed = args.random_seed
 voxel_size = tuple(args.voxel_size)
 
 # device variable (cpu or cuda) that determines whether calculations
@@ -207,14 +207,12 @@ for epoch in range(num_epochs_post):
 
         if val_loss_post < min_val_loss_post:
             min_val_loss_post = val_loss_post
-            torch.save(post_recon_unet.state_dict(),
+            torch.save(post_recon_unet.neural_net.state_dict(),
                        output_dir / 'post_recon_model_best_state.pt')
-            torch.save(post_recon_unet,
-                       output_dir / 'post_recon_model_best.pt')
 
-torch.save(post_recon_unet.state_dict(),
+torch.save(loss_arr_post, output_dir / 'training_loss_post.pt')
+torch.save(post_recon_unet.neural_net.state_dict(),
            output_dir / 'post_recon_model_last_state.pt')
-torch.save(post_recon_unet, output_dir / 'post_recon_model_last.pt')
 
 del post_recon_unet
 
@@ -281,4 +279,5 @@ for epoch in range(num_epochs):
             torch.save(osem_var_net.state_dict(),
                        output_dir / 'model_best_state.pt')
 
+torch.save(loss_arr, output_dir / 'training_loss.pt')
 torch.save(osem_var_net.state_dict(), output_dir / 'model_last_state.pt')

@@ -76,7 +76,6 @@ def sequential_conv_model(device,
 
 class DoubleConv3DBlock(torch.nn.Module):
     """convolution, batch norm, relu, convolution, batch norm, relu"""
-
     def __init__(self, in_channels: int, out_channels: int):
         super().__init__()
         self._double_conv = torch.nn.Sequential(
@@ -98,7 +97,6 @@ class DoubleConv3DBlock(torch.nn.Module):
 
 class Unet3DDownBlock(torch.nn.Module):
     """maxpool downsampling followed by double conv block"""
-
     def __init__(self, in_channels: int, out_channels: int):
         super().__init__()
         self._maxpool_conv = torch.nn.Sequential(
@@ -111,7 +109,6 @@ class Unet3DDownBlock(torch.nn.Module):
 
 class Unet3DUpBlock(torch.nn.Module):
     """bilinear upsampling, concatenation, double conv block"""
-
     def __init__(self, in_channels: int, out_channels: int):
         super().__init__()
 
@@ -124,7 +121,6 @@ class Unet3DUpBlock(torch.nn.Module):
 
 
 class Unet3dFinalConv(torch.nn.Module):
-
     def __init__(self, in_channels: int, out_channels: int = 1):
         super().__init__()
         self._conv = torch.nn.Conv3d(in_channels, out_channels, kernel_size=1)
@@ -135,7 +131,6 @@ class Unet3dFinalConv(torch.nn.Module):
 
 class Unet3D(torch.nn.Module):
     """3D Unet with 3D downsampling and upsampling blocks"""
-
     def __init__(self, num_features: int = 8, num_input_channels: int = 1):
         super().__init__()
         self._num_features = num_features
@@ -189,14 +184,11 @@ if __name__ == '__main__':
         f'run "tensorboard --logdir {tmp_run_dir.name}" to view model in tensorboard'
     )
 
+
 class SimpleOSEMVarNet(torch.nn.Module):
     """dummy cascaded model that includes layers combining projections and convolutions"""
-
-    def __init__(self,
-                 osem_update_modules: torch.nn.Module,
-                 neural_net: torch.nn.Module,
-                 depth: int,
-                 device) -> None:
+    def __init__(self, osem_update_modules: torch.nn.Module,
+                 neural_net: torch.nn.Module, depth: int, device) -> None:
 
         super().__init__()
 
@@ -240,16 +232,18 @@ class SimpleOSEMVarNet(torch.nn.Module):
 
         return x
 
+
 class PostReconNet(torch.nn.Module):
     """dummy cascaded model that includes layers combining projections and convolutions"""
-
-    def __init__(self,
-                 neural_net: torch.nn.Module) -> None:
+    def __init__(self, neural_net: torch.nn.Module) -> None:
         super().__init__()
         self._neural_net = neural_net
+
+    @property
+    def neural_net(self) -> torch.nn.Module:
+        return self._neural_net
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # fusion of EM update and neural net update with trainable weight
         # we use an ReLU activation to ensure that the output of each block is non-negative
         return torch.nn.ReLU()(x + self._neural_net(x))
-
