@@ -106,13 +106,14 @@ def load_brain_image(i: int,
     if normalize_emission:
         emission_img = emission_img / scale
 
-    return to_device(xp.asarray(emission_img, dtype=xp.float32), dev), to_device(xp.asarray(
-                          attenuation_img, dtype=xp.float32), dev)
+    return to_device(xp.asarray(emission_img, dtype=xp.float32),
+                     dev), to_device(
+                         xp.asarray(attenuation_img, dtype=xp.float32), dev)
 
 
 def load_brain_image_batch(ids, xp, dev, **kwargs):
-    for i in ids:
-        em_img, att_img = load_brain_image(i, xp, dev, **kwargs)
+    for i, ii in enumerate(ids):
+        em_img, att_img = load_brain_image(ii, xp, dev, **kwargs)
 
         if i == 0:
             img_shape = em_img.shape
@@ -134,7 +135,8 @@ def simulate_data_batch(
     attenuation_image_batch: npt.NDArray,
     subset_projectors: npt.NDArray,
     sens: float = 1.,
-    contam_fraction: float = 0.4
+    contam_fraction: float = 0.4,
+    random_seed: int | None = None
 ) -> tuple[npt.NDArray, npt.NDArray, npt.NDArray, npt.NDArray]:
     """Simulate a batch of emission data from a batch of emission and attenuation images
 
@@ -150,14 +152,22 @@ def simulate_data_batch(
         sensitivity value that determines number of prompts, by default 1.
     contam_fraction : float, optional
         contamination fraction, by default 0.4
+    random_seed : int | None, optional
+        random seed for reproducibility, by default None -> not set
 
     Returns
     -------
     npt.NDArray, npt.NDArray, npt.NDArray, npt.NDArray
         emission_data_batch, correction_batch, contamination_batch, adjoint_ones_batch
     """
+
     xp = get_namespace(emission_image_batch)
     dev = device(emission_image_batch)
+
+    if 'torch' in xp.__name__:
+        xp.manual_seed(random_seed)
+    else:
+        xp.random.seed(random_seed)
 
     num_subsets = subset_projectors.num_subsets
     batch_size = emission_image_batch.shape[0]

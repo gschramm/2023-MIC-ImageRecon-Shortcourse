@@ -1,6 +1,7 @@
 import torch
 import collections
 from array_api_compat import to_device
+from utils import distributed_subset_order
 
 
 def sequential_conv_model(device,
@@ -187,3 +188,68 @@ if __name__ == '__main__':
     print(
         f'run "tensorboard --logdir {tmp_run_dir.name}" to view model in tensorboard'
     )
+
+class SimpleOSEMVarNet(torch.nn.Module):
+    """dummy cascaded model that includes layers combining projections and convolutions"""
+
+    def __init__(self,
+                 osem_update_modules: torch.nn.Module,
+                 neural_net: torch.nn.Module,
+                 depth: int,
+                 device) -> None:
+
+        super().__init__()
+
+        self._osem_update_modules = osem_update_modules
+
+        self._num_subsets = len(osem_update_modules)
+        self._subset_order = distributed_subset_order(self._num_subsets)
+
+        self._neural_net = neural_net
+        self._depth = depth
+
+        self._neural_net_weight = torch.nn.ParameterList(
+            [torch.ones(1, device=device) for _ in range(self._depth)])
+
+    @property
+    def neural_net_weight(self) -> torch.Tensor:
+        return self._neural_net_weight
+
+    @property
+    def neural_net(self) -> torch.nn.Module:
+        return self._neural_net
+
+    def forward(self, x: torch.Tensor, emission_data_batch: torch.Tensor,
+                correction_batch: torch.Tensor,
+                contamination_batch: torch.Tensor,
+                adjoint_ones_batch: torch.Tensor) -> torch.Tensor:
+
+        for j in range(self._depth):
+            subset = self._subset_order[j % self._num_subsets]
+            x_em = self._osem_update_modules[subset](
+                x, emission_data_batch[subset, ...], correction_batch[subset,
+                                                                      ...],
+                contamination_batch[subset, ...], adjoint_ones_batch[subset,
+                                                                     ...])
+
+            x_nn = self._neural_net(x)
+
+            # fusion of EM update and neural net update with trainable weight
+            # we use an ReLU activation to ensure that the output of each block is non-negative
+            x = torch.nn.ReLU()(x_em + self._neural_net_weight[j] * x_nn)
+
+        return x
+
+class PostReconNet(torch.nn.Module):
+    """dummy cascaded model that includes layers combining projections and convolutions"""
+
+    def __init__(self,
+                 neural_net: torch.nn.Module) -> None:
+        super().__init__()
+        self._neural_net = neural_net
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # fusion of EM update and neural net update with trainable weight
+        # we use an ReLU activation to ensure that the output of each block is non-negative
+        return torch.nn.ReLU()(x + self._neural_net(x))
+

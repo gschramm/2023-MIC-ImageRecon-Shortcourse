@@ -1144,3 +1144,29 @@ class RegularPolygonPETNonTOFProjector(parallelproj.LinearOperator):
                 self.tof_parameters.num_tofbins)
 
         return self._resolution_model.adjoint(y_back)
+
+
+
+def distributed_subset_order(n: int) -> list[int]:
+    """subset order that maximizes distance between subsets
+
+    Parameters
+    ----------
+    n : int
+        number of subsets
+
+    Returns
+    -------
+    list[int]
+    """    
+    l = [x for x in range(n)]
+    o = []
+
+    for i in range(n):
+        if (i % 2) == 0:
+            o.append(l.pop(0))
+        else:
+            o.append(l.pop(len(l)//2))
+
+    return o
+
