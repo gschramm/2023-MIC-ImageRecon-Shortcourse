@@ -21,10 +21,12 @@ import pymirc.viewer as pv
 
 parser = argparse.ArgumentParser(description='OSEM-VARNet evaluation')
 parser.add_argument('--run_dir')
+parser.add_argument('--sens', type=float, default=1)
 
 args = parser.parse_args()
 
 run_dir = Path(args.run_dir)
+sens = args.sens
 
 with open(run_dir / 'input_cfg.json', 'r') as f:
     cfg = json.load(f)
@@ -75,24 +77,25 @@ axial_fov_mm = float(lor_descriptor.scanner.num_rings *
 # image properties
 ids = tuple([i for i in range(num_training, num_training + num_validation)])
 
-if not (run_dir / 'gt_val.pt').exists():
-    emission_image_database, attenuation_image_database = load_brain_image_batch(
-        ids,
-        torch,
-        dev,
-        voxel_size=voxel_size,
-        axial_fov_mm=0.95 * axial_fov_mm,
-        verbose=True)
-
-    torch.save(emission_image_database, run_dir / 'gt_val.pt')
-    torch.save(attenuation_image_database, run_dir / 'att_val.pt')
-else:
-    emission_image_database = torch.load(run_dir / 'gt_val.pt',
-                                         map_location=dev)
-    attenuation_image_database = torch.load(run_dir / 'att_val.pt',
-                                            map_location=dev)
+emission_image_database, attenuation_image_database = load_brain_image_batch(
+    ids,
+    torch,
+    dev,
+    voxel_size=voxel_size,
+    axial_fov_mm=0.95 * axial_fov_mm,
+    verbose=True)
 
 img_shape = tuple(emission_image_database.shape[2:])
+
+#### HACK
+#emission_image_database[0, ...] = 0
+#emission_image_database[0, 0, 5:-5, 5:-5, :] = 0.4
+#emission_image_database[0, 0, 30:35, 35:40, :] = 0.7
+#attenuation_image_database[0,
+#                           ...] = 0.01 * (emission_image_database[0, ...] > 0)
+#
+#emission_image_database = torch.swapaxes(emission_image_database, 2, 3)
+#attenuation_image_database = torch.swapaxes(attenuation_image_database, 2, 3)
 
 #----------------------------------------------------------------------------
 #----------------------------------------------------------------------------
@@ -119,6 +122,7 @@ emission_data_database, correction_database, contamination_database, adjoint_one
     emission_image_database,
     attenuation_image_database,
     subset_projectors,
+    sens=sens,
     random_seed=random_seed)
 
 #--------------------------------------------------------------------------------
@@ -130,29 +134,24 @@ osem_update_modules = [
     EMUpdateModule(projector) for projector in subset_projectors.operators
 ]
 
-if not (run_dir / 'osem_val.pt').exists():
-    osem_database = torch.ones(
-        (emission_image_database.shape[0], 1) + subset_projectors.in_shape,
-        device=dev,
-        dtype=torch.float32)
+osem_database = torch.ones(
+    (emission_image_database.shape[0], 1) + subset_projectors.in_shape,
+    device=dev,
+    dtype=torch.float32)
 
-    num_osem_iter = 102 // num_subsets
+num_osem_iter = 102 // num_subsets
 
-    subset_order = utils.distributed_subset_order(num_subsets)
+subset_order = utils.distributed_subset_order(num_subsets)
 
-    for i in range(num_osem_iter):
-        print(f'OSEM iteration {(i+1):003}/{num_osem_iter:003}', end='\r')
-        for j in range(num_subsets):
-            subset = subset_order[j]
-            osem_database = osem_update_modules[subset](
-                osem_database, emission_data_database[subset, ...],
-                correction_database[subset,
-                                    ...], contamination_database[subset, ...],
-                adjoint_ones_database[subset, ...])
-
-    torch.save(osem_database, run_dir / 'osem_val.pt')
-else:
-    osem_database = torch.load(run_dir / 'osem_val.pt', map_location=dev)
+for i in range(num_osem_iter):
+    print(f'OSEM iteration {(i+1):003}/{num_osem_iter:003}', end='\r')
+    for j in range(num_subsets):
+        subset = subset_order[j]
+        osem_database = osem_update_modules[subset](
+            osem_database, emission_data_database[subset, ...],
+            correction_database[subset, ...],
+            contamination_database[subset, ...], adjoint_ones_database[subset,
+                                                                       ...])
 
 #--------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------
@@ -160,29 +159,32 @@ else:
 #--------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------
 
-if not (run_dir / 'pred_val_post.pt').exists():
-    post_recon_unet = PostReconNet(Unet3D(num_features=num_features).to(dev))
-    post_recon_unet._neural_net.load_state_dict(
-        torch.load(run_dir / 'post_recon_model_best_state.pt'))
-    post_recon_unet.eval()
+loss_fn = torch.nn.MSELoss(reduction='none')
 
-    pred_val_post = post_recon_unet(osem_database)
-    torch.save(pred_val_post, run_dir / 'pred_val_post.pt')
-else:
-    pred_val_post = torch.load(run_dir / 'pred_val_post.pt', map_location=dev)
+post_recon_unet = PostReconNet(Unet3D(num_features=num_features).to(dev))
+post_recon_unet._neural_net.load_state_dict(
+    torch.load(run_dir / 'post_recon_model_best_state.pt'))
+post_recon_unet.eval()
 
-if not (run_dir / 'pred_val.pt').exists():
-    unet = Unet3D(num_features=num_features).to(dev)
-    osem_var_net = SimpleOSEMVarNet(osem_update_modules, unet, depth, dev)
-    osem_var_net.load_state_dict(torch.load(run_dir / 'model_best_state.pt'))
-    osem_var_net.eval()
+pred_val_post = post_recon_unet(osem_database)
 
-    pred_val = osem_var_net(osem_database, emission_data_database,
-                            correction_database, contamination_database,
-                            adjoint_ones_database)
-    torch.save(pred_val, run_dir / 'pred_val.pt')
-else:
-    pred_val = torch.load(run_dir / 'pred_val.pt', map_location=dev)
+val_loss_post = loss_fn(pred_val_post, emission_image_database).mean(
+    (1, 2, 3, 4))
+print(val_loss_post)
+print(val_loss_post.mean())
+
+unet = Unet3D(num_features=num_features).to(dev)
+osem_var_net = SimpleOSEMVarNet(osem_update_modules, unet, depth, dev)
+osem_var_net.load_state_dict(torch.load(run_dir / 'model_best_state.pt'))
+osem_var_net.eval()
+
+pred_val = osem_var_net(osem_database, emission_data_database,
+                        correction_database, contamination_database,
+                        adjoint_ones_database)
+
+val_loss = loss_fn(pred_val, emission_image_database).mean((1, 2, 3, 4))
+print(val_loss)
+print(val_loss.mean())
 
 vi = pv.ThreeAxisViewer([
     np.asarray(to_device(osem_database.detach().squeeze(), 'cpu')),

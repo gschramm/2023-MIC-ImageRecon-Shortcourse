@@ -163,3 +163,4 @@ cython_debug/
 data/*
 *.pt
 run_osem_varnet*
+run*.sh

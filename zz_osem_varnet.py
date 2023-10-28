@@ -29,6 +29,7 @@ parser.add_argument('--num_features', type=int, default=8)
 parser.add_argument('--num_rings', type=int, default=4)
 parser.add_argument('--radial_trim', type=int, default=181)
 parser.add_argument('--random_seed', type=int, default=1)
+parser.add_argument('--sens', type=float, default=1)
 parser.add_argument('--voxel_size',
                     nargs='+',
                     type=float,
@@ -48,6 +49,7 @@ num_features = args.num_features
 num_rings = args.num_rings
 radial_trim = args.radial_trim
 random_seed = args.random_seed
+sens = args.sens
 voxel_size = tuple(args.voxel_size)
 
 # device variable (cpu or cuda) that determines whether calculations
@@ -124,6 +126,7 @@ emission_data_database, correction_database, contamination_database, adjoint_one
     emission_image_database,
     attenuation_image_database,
     subset_projectors,
+    sens=sens,
     random_seed=random_seed)
 
 #--------------------------------------------------------------------------------
