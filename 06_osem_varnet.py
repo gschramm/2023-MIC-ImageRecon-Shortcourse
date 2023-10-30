@@ -13,7 +13,7 @@ from array_api_compat import to_device
 
 from layers import EMUpdateModule
 from models import Unet3D, SimpleOSEMVarNet, PostReconNet
-from data import load_brain_image, load_brain_image_batch, simulate_data_batch, download_brainweb_data()
+from data import load_brain_image, load_brain_image_batch, simulate_data_batch, download_brainweb_data
 from math import ceil
 
 import tempfile
@@ -24,7 +24,7 @@ parser.add_argument('--num_datasets', type=int, default=60)
 parser.add_argument('--num_training', type=int, default=40)
 parser.add_argument('--num_validation', type=int, default=20)
 parser.add_argument('--num_subsets', type=int, default=4)
-parser.add_argument('--depth', type=int, default=4)
+parser.add_argument('--depth', type=int, default=8)
 parser.add_argument('--num_epochs', type=int, default=500)
 parser.add_argument('--num_epochs_post', type=int, default=500)
 parser.add_argument('--batch_size', type=int, default=10)
