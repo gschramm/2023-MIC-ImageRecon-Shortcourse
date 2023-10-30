@@ -162,29 +162,6 @@ class Unet3D(torch.nn.Module):
         return self.final_conv(y)
 
 
-if __name__ == '__main__':
-    import tempfile
-    from torch.utils.tensorboard import SummaryWriter
-    dev = "cpu"
-    dtype = torch.float32
-
-    x = torch.rand(4, 1, 128, 128, 16, dtype=dtype).to(dev)
-
-    model = Unet3D(num_features=8)
-    y = model(x)
-    print('number of trainable parameters:',
-          sum(p.numel() for p in model.parameters()))
-
-    tmp_run_dir = tempfile.TemporaryDirectory()
-    writer = SummaryWriter(tmp_run_dir.name)
-    writer.add_graph(model, x)
-    writer.close()
-
-    print(
-        f'run "tensorboard --logdir {tmp_run_dir.name}" to view model in tensorboard'
-    )
-
-
 class SimpleOSEMVarNet(torch.nn.Module):
     """dummy cascaded model that includes layers combining projections and convolutions"""
     def __init__(self, osem_update_modules: torch.nn.Module,
@@ -247,3 +224,26 @@ class PostReconNet(torch.nn.Module):
         # fusion of EM update and neural net update with trainable weight
         # we use an ReLU activation to ensure that the output of each block is non-negative
         return torch.nn.ReLU()(x + self._neural_net(x))
+
+
+if __name__ == '__main__':
+    import tempfile
+    from torch.utils.tensorboard import SummaryWriter
+    dev = "cpu"
+    dtype = torch.float32
+
+    x = torch.rand(4, 1, 128, 128, 16, dtype=dtype).to(dev)
+
+    model = Unet3D(num_features=32)
+    y = model(x)
+    print('number of trainable parameters:',
+          sum(p.numel() for p in model.parameters()))
+
+    tmp_run_dir = tempfile.TemporaryDirectory()
+    writer = SummaryWriter(tmp_run_dir.name)
+    writer.add_graph(model, x)
+    writer.close()
+
+    print(
+        f'run "tensorboard --logdir {tmp_run_dir.name}" to view model in tensorboard'
+    )
