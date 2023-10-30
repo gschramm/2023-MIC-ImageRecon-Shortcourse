@@ -75,121 +75,148 @@ axial_fov_mm = float(lor_descriptor.scanner.num_rings *
 #----------------------------------------------------------------------------
 
 # image properties
-ids = tuple([i for i in range(num_training, num_training + num_validation)])
+dataset_ids = tuple(
+    [i for i in range(num_training, num_training + num_validation)])
 
-emission_image_database, attenuation_image_database = load_brain_image_batch(
-    ids,
-    torch,
-    dev,
-    voxel_size=voxel_size,
-    axial_fov_mm=0.95 * axial_fov_mm,
-    verbose=True)
+val_loss_post = {}
+val_loss = {}
 
-img_shape = tuple(emission_image_database.shape[2:])
+for i, dataset_id in enumerate(dataset_ids):
+    emission_image_database, attenuation_image_database = load_brain_image_batch(
+        (dataset_id, ),
+        torch,
+        dev,
+        voxel_size=voxel_size,
+        axial_fov_mm=0.95 * axial_fov_mm,
+        verbose=True)
 
-#### HACK
-#emission_image_database[0, ...] = 0
-#emission_image_database[0, 0, 5:-5, 5:-5, :] = 0.4
-#emission_image_database[0, 0, 30:35, 35:40, :] = 0.7
-#attenuation_image_database[0,
-#                           ...] = 0.01 * (emission_image_database[0, ...] > 0)
-#
-#emission_image_database = torch.swapaxes(emission_image_database, 2, 3)
-#attenuation_image_database = torch.swapaxes(attenuation_image_database, 2, 3)
+    img_shape = tuple(emission_image_database.shape[2:])
 
-#----------------------------------------------------------------------------
-#----------------------------------------------------------------------------
+    # setup a filter operator to post filter the input OSEM's for reference
+    filt_op = parallelproj.GaussianFilterOperator(img_shape, 1.0)
 
-subset_projectors = parallelproj.SubsetOperator([
-    utils.RegularPolygonPETNonTOFProjector(
-        lor_descriptor,
-        img_shape,
-        voxel_size,
-        views=torch.arange(i,
-                           lor_descriptor.num_views,
-                           num_subsets,
-                           device=dev)) for i in range(num_subsets)
-])
+    if i == 0:
+        pred_val_post = torch.zeros((num_validation, ) + img_shape,
+                                    device='cpu',
+                                    dtype=torch.float32)
+        pred_val = torch.zeros((num_validation, ) + img_shape,
+                               device='cpu',
+                               dtype=torch.float32)
+        input_images = torch.zeros((num_validation, ) + img_shape,
+                                   device='cpu',
+                                   dtype=torch.float32)
+        input_images_sm = torch.zeros((num_validation, ) + img_shape,
+                                      device='cpu',
+                                      dtype=torch.float32)
+        ref_images = torch.zeros((num_validation, ) + img_shape,
+                                 device='cpu',
+                                 dtype=torch.float32)
 
-#--------------------------------------------------------------------------------
-#--------------------------------------------------------------------------------
-#--------------------------------------------------------------------------------
-#--------------------------------------------------------------------------------
+    #----------------------------------------------------------------------------
+    #----------------------------------------------------------------------------
 
-print(f'simulating data')
+    subset_projectors = parallelproj.SubsetOperator([
+        utils.RegularPolygonPETNonTOFProjector(
+            lor_descriptor,
+            img_shape,
+            voxel_size,
+            views=torch.arange(i,
+                               lor_descriptor.num_views,
+                               num_subsets,
+                               device=dev)) for i in range(num_subsets)
+    ])
 
-emission_data_database, correction_database, contamination_database, adjoint_ones_database = simulate_data_batch(
-    emission_image_database,
-    attenuation_image_database,
-    subset_projectors,
-    sens=sens,
-    random_seed=random_seed)
+    #--------------------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
 
-#--------------------------------------------------------------------------------
-#--------------------------------------------------------------------------------
-#--------------------------------------------------------------------------------
-#--------------------------------------------------------------------------------
+    emission_data_database, correction_database, contamination_database, adjoint_ones_database = simulate_data_batch(
+        emission_image_database,
+        attenuation_image_database,
+        subset_projectors,
+        sens=sens,
+        random_seed=random_seed)
 
-osem_update_modules = [
-    EMUpdateModule(projector) for projector in subset_projectors.operators
-]
+    del attenuation_image_database
 
-osem_database = torch.ones(
-    (emission_image_database.shape[0], 1) + subset_projectors.in_shape,
-    device=dev,
-    dtype=torch.float32)
+    #--------------------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
 
-num_osem_iter = 102 // num_subsets
+    osem_update_modules = [
+        EMUpdateModule(projector) for projector in subset_projectors.operators
+    ]
 
-subset_order = utils.distributed_subset_order(num_subsets)
+    osem_database = torch.ones(
+        (emission_image_database.shape[0], 1) + subset_projectors.in_shape,
+        device=dev,
+        dtype=torch.float32)
 
-for i in range(num_osem_iter):
-    print(f'OSEM iteration {(i+1):003}/{num_osem_iter:003}', end='\r')
-    for j in range(num_subsets):
-        subset = subset_order[j]
-        osem_database = osem_update_modules[subset](
-            osem_database, emission_data_database[subset, ...],
-            correction_database[subset, ...],
-            contamination_database[subset, ...], adjoint_ones_database[subset,
-                                                                       ...])
+    num_osem_iter = 102 // num_subsets
 
-#--------------------------------------------------------------------------------
-#--------------------------------------------------------------------------------
-# evaluate the models
-#--------------------------------------------------------------------------------
-#--------------------------------------------------------------------------------
+    subset_order = utils.distributed_subset_order(num_subsets)
 
-loss_fn = torch.nn.MSELoss(reduction='none')
+    for _ in range(num_osem_iter):
+        for j in range(num_subsets):
+            subset = subset_order[j]
+            osem_database = osem_update_modules[subset](
+                osem_database, emission_data_database[subset, ...],
+                correction_database[subset,
+                                    ...], contamination_database[subset, ...],
+                adjoint_ones_database[subset, ...])
 
-post_recon_unet = PostReconNet(Unet3D(num_features=num_features).to(dev))
-post_recon_unet._neural_net.load_state_dict(
-    torch.load(run_dir / 'post_recon_model_best_state.pt'))
-post_recon_unet.eval()
+    input_images[i, ...] = osem_database.detach().cpu().squeeze()
+    input_images_sm[i, ...] = filt_op(osem_database.detach().cpu().squeeze())
+    ref_images[i, ...] = emission_image_database.detach().cpu().squeeze()
+    #--------------------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    # evaluate the models
+    #--------------------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
 
-pred_val_post = post_recon_unet(osem_database)
+    loss_fn = torch.nn.MSELoss()
 
-val_loss_post = loss_fn(pred_val_post, emission_image_database).mean(
-    (1, 2, 3, 4))
-print(val_loss_post)
-print(val_loss_post.mean())
+    post_recon_unet = PostReconNet(Unet3D(num_features=num_features).to(dev))
+    post_recon_unet._neural_net.load_state_dict(
+        torch.load(run_dir / 'post_recon_model_best_state.pt'))
+    post_recon_unet.eval()
 
-unet = Unet3D(num_features=num_features).to(dev)
-osem_var_net = SimpleOSEMVarNet(osem_update_modules, unet, depth, dev)
-osem_var_net.load_state_dict(torch.load(run_dir / 'model_best_state.pt'))
-osem_var_net.eval()
+    x_fwd = post_recon_unet(osem_database)
+    val_loss_post[dataset_id] = float(loss_fn(x_fwd, emission_image_database))
+    pred_val_post[i, ...] = x_fwd.detach().cpu().squeeze()
 
-pred_val = osem_var_net(osem_database, emission_data_database,
-                        correction_database, contamination_database,
-                        adjoint_ones_database)
+    unet = Unet3D(num_features=num_features).to(dev)
+    osem_var_net = SimpleOSEMVarNet(osem_update_modules, unet, depth, dev)
+    osem_var_net.load_state_dict(torch.load(run_dir / 'model_best_state.pt'))
+    osem_var_net.eval()
 
-val_loss = loss_fn(pred_val, emission_image_database).mean((1, 2, 3, 4))
-print(val_loss)
-print(val_loss.mean())
+    x_fwd = osem_var_net(osem_database, emission_data_database,
+                         correction_database, contamination_database,
+                         adjoint_ones_database)
+    val_loss[dataset_id] = float(loss_fn(x_fwd, emission_image_database))
+    pred_val[i, ...] = x_fwd.detach().cpu().squeeze()
+
+val_loss['mean'] = sum(val_loss.values()) / num_validation
+val_loss_post['mean'] = sum(val_loss_post.values()) / num_validation
+
+print(str(run_dir))
+print(cfg)
+print(val_loss_post['mean'], val_loss['mean'])
+
+with open(run_dir / 'val_loss.json', 'w') as f:
+    json.dump(val_loss, f)
+
+with open(run_dir / 'val_loss_post.json', 'w') as f:
+    json.dump(val_loss_post, f)
 
 vi = pv.ThreeAxisViewer([
-    np.asarray(to_device(osem_database.detach().squeeze(), 'cpu')),
-    np.asarray(to_device(pred_val_post.detach().squeeze(), 'cpu')),
-    np.asarray(to_device(pred_val.detach().squeeze(), 'cpu')),
-    np.asarray(to_device(emission_image_database.detach().squeeze(), 'cpu'))
+    np.asarray(input_images),
+    np.asarray(input_images_sm),
+    np.asarray(pred_val_post),
+    np.asarray(pred_val),
+    np.asarray(ref_images)
 ],
-                        imshow_kwargs=dict(vmin=0, vmax=1.1))
+                        imshow_kwargs=dict(vmin=0, vmax=1.1),
+                        width=4)
