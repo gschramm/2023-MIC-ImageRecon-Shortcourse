@@ -223,4 +223,5 @@ vi = pv.ThreeAxisViewer([
     np.asarray(ref_images)
 ],
                         imshow_kwargs=dict(vmin=0, vmax=1.1),
+                        ls='',
                         width=4)
