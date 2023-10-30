@@ -1,3 +1,6 @@
+"""minimal script that evaluates trained OSEM varnets
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -211,6 +214,7 @@ with open(run_dir / 'val_loss.json', 'w') as f:
 with open(run_dir / 'val_loss_post.json', 'w') as f:
     json.dump(val_loss_post, f)
 
+# show all inputs, predictions, and reference images
 vi = pv.ThreeAxisViewer([
     np.asarray(input_images),
     np.asarray(input_images_sm),
