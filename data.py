@@ -13,7 +13,7 @@ import numpy.typing as npt
 from types import ModuleType
 
 
-def download_data(
+def download_brainweb_data(
         zip_file_url:
     str = 'https://zenodo.org/record/8067595/files/brainweb_petmr_v2.zip',
         force: bool = False,

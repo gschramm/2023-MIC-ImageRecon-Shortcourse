@@ -1,3 +1,6 @@
+"""miminal script that trains an OSEM varnet on simulated brainweb data
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -10,7 +13,7 @@ from array_api_compat import to_device
 
 from layers import EMUpdateModule
 from models import Unet3D, SimpleOSEMVarNet, PostReconNet
-from data import load_brain_image, load_brain_image_batch, simulate_data_batch
+from data import load_brain_image, load_brain_image_batch, simulate_data_batch, download_brainweb_data()
 from math import ceil
 
 import tempfile
@@ -25,7 +28,7 @@ parser.add_argument('--depth', type=int, default=4)
 parser.add_argument('--num_epochs', type=int, default=500)
 parser.add_argument('--num_epochs_post', type=int, default=500)
 parser.add_argument('--batch_size', type=int, default=10)
-parser.add_argument('--num_features', type=int, default=8)
+parser.add_argument('--num_features', type=int, default=32)
 parser.add_argument('--num_rings', type=int, default=4)
 parser.add_argument('--radial_trim', type=int, default=181)
 parser.add_argument('--random_seed', type=int, default=1)
@@ -88,6 +91,9 @@ axial_fov_mm = float(lor_descriptor.scanner.num_rings *
 #----------------------------------------------------------------------------
 #----------------------------------------------------------------------------
 
+# download and extract the brainweb PET/MR images into ./data if not present
+download_brainweb_data()
+
 # image properties
 ids = tuple([i for i in range(num_datasets)])
 
@@ -120,8 +126,9 @@ subset_projectors = parallelproj.SubsetOperator([
 #--------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------
 
-print(f'simulating data')
+print(f'simulating emission and correction data')
 
+# simulate all emission and correction sinograms we need
 emission_data_database, correction_database, contamination_database, adjoint_ones_database = simulate_data_batch(
     emission_image_database,
     attenuation_image_database,
@@ -133,6 +140,8 @@ emission_data_database, correction_database, contamination_database, adjoint_one
 #--------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------
+
+# run OSEM reconstructions of the simulated data
 
 osem_update_modules = [
     EMUpdateModule(projector) for projector in subset_projectors.operators
