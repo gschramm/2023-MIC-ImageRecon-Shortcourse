@@ -61,6 +61,11 @@ y = torch.rand((batch_size, ) + projector.out_shape,
                dtype=torch.float32,
                requires_grad=True)
 
+# the LinearSingleChannelOperator and AdjointLinearSingleChannelOperator classes
+# that subclass torch.autograd.Function
+# are defined in layers.py -> have a look at the code there to see how the
+# forward and backward passes are implemented
+
 fwd_op_layer = LinearSingleChannelOperator.apply
 adjoint_op_layer = AdjointLinearSingleChannelOperator.apply
 

@@ -33,9 +33,11 @@ fig = plt.figure()
 ax = fig.add_subplot(projection='3d')
 lor_descriptor.scanner.show_lor_endpoints(ax)
 lor_descriptor.show_views(ax,
-                          views=torch.asarray([lor_descriptor.num_views // 4]),
+                          views=torch.asarray([lor_descriptor.num_views // 4],
+                                              device=dev),
                           planes=torch.asarray(
-                              [lor_descriptor.scanner.num_modules // 2]))
+                              [lor_descriptor.scanner.num_modules // 2],
+                              device=dev))
 fig.tight_layout()
 fig.show()
 

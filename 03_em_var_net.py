@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import utils
 import parallelproj
-import array_api_compat.numpy as np
 import array_api_compat.torch as torch
-from array_api_compat import to_device
-import matplotlib.pyplot as plt
 
 from layers import EMUpdateModule
 
@@ -27,13 +24,13 @@ class SimpleEMVarNet(torch.nn.Module):
 
         if neural_net is None:
             self._neural_net = torch.nn.Sequential(
-                torch.nn.Conv3d(1, 10, 3, padding='same', device = device),
+                torch.nn.Conv3d(1, 10, 3, padding='same', device=device),
                 torch.nn.ReLU(),
-                torch.nn.Conv3d(10, 10, 3, padding='same', device = device),
+                torch.nn.Conv3d(10, 10, 3, padding='same', device=device),
                 torch.nn.ReLU(),
-                torch.nn.Conv3d(10, 10, 3, padding='same', device = device),
+                torch.nn.Conv3d(10, 10, 3, padding='same', device=device),
                 torch.nn.ReLU(),
-                torch.nn.Conv3d(10, 1, 3, padding='same', device = device),
+                torch.nn.Conv3d(10, 1, 3, padding='same', device=device),
             )
         else:
             self._neural_net = neural_net

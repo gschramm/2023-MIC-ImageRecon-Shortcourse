@@ -102,6 +102,9 @@ for i in range(batch_size):
 #--------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------
 
+# the EMUpdateModule that subclasses torch.nn.Module is defined in layers.py
+# have look at the code there to see how the forward pass is implemtend
+
 em_update_module = EMUpdateModule(projector)
 x = torch.ones((batch_size, 1) + projector.in_shape,
                device=dev,

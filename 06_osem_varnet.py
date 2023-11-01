@@ -9,14 +9,11 @@ from datetime import datetime
 import utils
 import parallelproj
 import array_api_compat.torch as torch
-from array_api_compat import to_device
 
 from layers import EMUpdateModule
 from models import Unet3D, SimpleOSEMVarNet, PostReconNet
-from data import load_brain_image, load_brain_image_batch, simulate_data_batch, download_brainweb_data
-from math import ceil
+from data import load_brain_image_batch, simulate_data_batch, download_brainweb_data
 
-import tempfile
 from pathlib import Path
 
 parser = argparse.ArgumentParser(description='OSEM-VARNet reconstruction')

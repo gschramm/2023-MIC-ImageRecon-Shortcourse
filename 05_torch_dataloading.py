@@ -8,9 +8,8 @@ import tempfile
 import torch
 import parallelproj
 from torch.utils.data import Dataset, DataLoader
-from array_api_compat import device, to_device
+from array_api_compat import device
 from pathlib import Path
-from shutil import rmtree
 
 from time import time
 
@@ -58,6 +57,7 @@ def create_dummy_data(root: str,
 
 class PETDataSet(Dataset):
     """Dummy PET data set consisting of images and sinograms"""
+
     def __init__(self,
                  root_dir: str,
                  pattern: str = 'acquisition_*',

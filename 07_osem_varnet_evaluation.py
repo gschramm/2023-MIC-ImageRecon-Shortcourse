@@ -5,18 +5,14 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime
 import utils
 import parallelproj
 import array_api_compat.torch as torch
-from array_api_compat import to_device
 
 from layers import EMUpdateModule
 from models import Unet3D, SimpleOSEMVarNet, PostReconNet
-from data import load_brain_image, load_brain_image_batch, simulate_data_batch
-from math import ceil
+from data import load_brain_image_batch, simulate_data_batch
 
-import tempfile
 from pathlib import Path
 
 import array_api_compat.numpy as np
