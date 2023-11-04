@@ -38,7 +38,7 @@ lor_descriptor = utils.DemoPETScannerLORDescriptor(torch,
 voxel_size = (2.66, 2.66, 2.66)
 img_shape = (10, 10, 2 * lor_descriptor.scanner.num_modules)
 
-projector = utils.RegularPolygonPETNonTOFProjector(
+projector = utils.RegularPolygonPETProjector(
     lor_descriptor,
     img_shape,
     voxel_size,

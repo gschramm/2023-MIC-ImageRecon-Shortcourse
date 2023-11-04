@@ -115,7 +115,7 @@ for i, dataset_id in enumerate(dataset_ids):
     #----------------------------------------------------------------------------
 
     subset_projectors = parallelproj.SubsetOperator([
-        utils.RegularPolygonPETNonTOFProjector(
+        utils.RegularPolygonPETProjector(
             lor_descriptor,
             img_shape,
             voxel_size,

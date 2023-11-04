@@ -989,7 +989,7 @@ class DemoPETScannerLORDescriptor(RegularPolygonPETLORDescriptor):
                          max_ring_difference=max_ring_difference)
 
 
-class RegularPolygonPETNonTOFProjector(parallelproj.LinearOperator):
+class RegularPolygonPETProjector(parallelproj.LinearOperator):
 
     def __init__(self,
                  lor_descriptor: RegularPolygonPETLORDescriptor,

@@ -33,7 +33,7 @@ n0 = 160
 n1 = n0
 img_shape = (n0, n1, 2 * lor_descriptor.scanner.num_modules)
 
-projector = utils.RegularPolygonPETNonTOFProjector(lor_descriptor, img_shape,
+projector = utils.RegularPolygonPETProjector(lor_descriptor, img_shape,
                                                    voxel_size)
 
 #----------------------------------------------------------------------------

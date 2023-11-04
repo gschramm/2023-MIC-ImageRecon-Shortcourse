@@ -36,7 +36,7 @@ img_shape = (n0, n1, 2 * lor_descriptor.scanner.num_modules)
 num_subsets = 34
 
 subset_projectors = parallelproj.SubsetOperator([
-    utils.RegularPolygonPETNonTOFProjector(lor_descriptor,
+    utils.RegularPolygonPETProjector(lor_descriptor,
                                            img_shape,
                                            voxel_size,
                                            views=torch.arange(

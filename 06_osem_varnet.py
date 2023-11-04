@@ -108,7 +108,7 @@ img_shape = tuple(emission_image_database.shape[2:])
 #----------------------------------------------------------------------------
 
 subset_projectors = parallelproj.SubsetOperator([
-    utils.RegularPolygonPETNonTOFProjector(
+    utils.RegularPolygonPETProjector(
         lor_descriptor,
         img_shape,
         voxel_size,
