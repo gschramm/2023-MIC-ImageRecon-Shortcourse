@@ -1,5 +1,7 @@
 # 2023-MIC-ImageRecon-Shortcourse
 
+![PET AI tutorial banner](figs/banner.png)
+
 ## Slides 
 
 The power point slides from my presentation at the IEEE MIC/NSS short course "Medical Image Reconstruction from Foundations to AI"
