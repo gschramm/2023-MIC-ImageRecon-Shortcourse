@@ -44,6 +44,11 @@ radial_trim = cfg['radial_trim']
 random_seed = cfg['random_seed']
 voxel_size = tuple(cfg['voxel_size'])
 
+if 'fusion_mode' in cfg:
+    fusion_mode = cfg['fusion_mode']
+else:
+    fusion_mode = 'simple'
+
 # device variable (cpu or cuda) that determines whether calculations
 # are performed on the cpu or cuda gpu
 if parallelproj.cuda_present:
@@ -187,7 +192,7 @@ for i, dataset_id in enumerate(dataset_ids):
     pred_val_post[i, ...] = x_fwd.detach().cpu().squeeze()
 
     unet = Unet3D(num_features=num_features).to(dev)
-    osem_var_net = SimpleOSEMVarNet(osem_update_modules, unet, depth, dev)
+    osem_var_net = SimpleOSEMVarNet(osem_update_modules, unet, depth, dev, fusion_mode=fusion_mode)
     osem_var_net.load_state_dict(torch.load(run_dir / 'model_best_state.pt'))
     osem_var_net.eval()
 
