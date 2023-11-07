@@ -34,6 +34,7 @@ parser.add_argument('--voxel_size',
                     nargs='+',
                     type=float,
                     default=[2.5, 2.5, 2.66])
+parser.add_argument('--fusion_mode', type=str, default = 'simple', choices=['simple', 'de_pierro'])
 
 args = parser.parse_args()
 
@@ -51,6 +52,7 @@ radial_trim = args.radial_trim
 random_seed = args.random_seed
 sens = args.sens
 voxel_size = tuple(args.voxel_size)
+fusion_mode = args.fusion_mode
 
 # device variable (cpu or cuda) that determines whether calculations
 # are performed on the cpu or cuda gpu
@@ -100,7 +102,7 @@ emission_image_database, attenuation_image_database = load_brain_image_batch(
     dev,
     voxel_size=voxel_size,
     axial_fov_mm=0.95 * axial_fov_mm,
-    verbose=True)
+    verbose=False)
 
 img_shape = tuple(emission_image_database.shape[2:])
 
@@ -208,7 +210,7 @@ for epoch in range(num_epochs_post):
                                                               num_validation),
                                                 ...])
         print(
-            f'{(epoch+1):03}/{num_epochs_post:03} val_loss {val_loss_post:.2E}'
+            f'{(epoch+1):03}/{num_epochs_post:03} train_loss {float(loss_post):.2E} val_loss {val_loss_post:.2E}'
         )
         post_recon_unet.train()
 
@@ -232,9 +234,14 @@ del post_recon_unet
 print('\nvarnet training\n')
 
 unet = Unet3D(num_features=num_features).to(dev)
-unet.load_state_dict(torch.load(output_dir / 'post_recon_model_best_state.pt'))
 
-osem_var_net = SimpleOSEMVarNet(osem_update_modules, unet, depth, dev)
+if fusion_mode == 'simple':
+    best_path = output_dir / 'post_recon_model_best_state.pt'
+    print(f'loading pre-trained weights from {best_path}')
+    unet.load_state_dict(torch.load(best_path))
+
+osem_var_net = SimpleOSEMVarNet(osem_update_modules, unet, depth, dev, fusion_mode=fusion_mode)
+print(f'fusion mode: {osem_var_net.fusion_mode}')
 osem_var_net.train()
 
 loss_fn = torch.nn.MSELoss()
@@ -278,7 +285,7 @@ for epoch in range(num_epochs):
                 loss_fn(x_fwd, emission_image_database[iv:(iv + 1), ...]))
 
         val_loss /= num_validation
-        print(f'{(epoch+1):03}/{num_epochs:03} val_loss {val_loss:.2E}')
+        print(f'{(epoch+1):03}/{num_epochs:03} train_loss {float(loss):.2E} val_loss {val_loss:.2E} net_weight {float(osem_var_net.neural_net_weight):.2E}')
         osem_var_net.train()
 
         if val_loss < min_val_loss:

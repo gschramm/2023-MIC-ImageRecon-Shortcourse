@@ -165,7 +165,7 @@ class Unet3D(torch.nn.Module):
 class SimpleOSEMVarNet(torch.nn.Module):
     """dummy cascaded model that includes layers combining projections and convolutions"""
     def __init__(self, osem_update_modules: torch.nn.Module,
-                 neural_net: torch.nn.Module, depth: int, device) -> None:
+                 neural_net: torch.nn.Module, depth: int, device: str, fusion_mode : str = 'simple') -> None:
 
         super().__init__()
 
@@ -177,8 +177,12 @@ class SimpleOSEMVarNet(torch.nn.Module):
         self._neural_net = neural_net
         self._depth = depth
 
-        self._neural_net_weight = torch.nn.ParameterList(
-            [torch.ones(1, device=device) for _ in range(self._depth)])
+        self._neural_net_weight = torch.nn.Parameter(torch.tensor(0.5, device = device))
+
+        if fusion_mode in {'de_pierro', 'simple'}:
+            self._fusion_mode = fusion_mode
+        else:
+            raise ValueError('fusion_mode must be "de_pierro" or "simple"')
 
     @property
     def neural_net_weight(self) -> torch.Tensor:
@@ -187,6 +191,10 @@ class SimpleOSEMVarNet(torch.nn.Module):
     @property
     def neural_net(self) -> torch.nn.Module:
         return self._neural_net
+
+    @property
+    def fusion_mode(self) -> str:
+        return self._fusion_mode
 
     def forward(self, x: torch.Tensor, emission_data_batch: torch.Tensor,
                 correction_batch: torch.Tensor,
@@ -201,11 +209,16 @@ class SimpleOSEMVarNet(torch.nn.Module):
                 contamination_batch[subset, ...], adjoint_ones_batch[subset,
                                                                      ...])
 
-            x_nn = self._neural_net(x)
-
-            # fusion of EM update and neural net update with trainable weight
-            # we use an ReLU activation to ensure that the output of each block is non-negative
-            x = torch.nn.ReLU()(x_em + self._neural_net_weight[j] * x_nn)
+            if self._fusion_mode == 'de_pierro':
+                # De Pierro fusion which is guaranteed to be non-negative
+                x_sm = x + self._neural_net(x)
+                beta_nu = self._neural_net_weight/adjoint_ones_batch[subset,...]
+                denom = (1 - beta_nu*x_sm) + torch.sqrt((1 - beta_nu*x_sm)**2 + 4*beta_nu*x_em)
+                x = 2*x_em / denom
+            else:
+                # fusion of EM update and neural net update with trainable weight
+                # we use an ReLU activation to ensure that the output of each block is non-negative
+                x = torch.nn.ReLU()(x_em + self._neural_net_weight * self._neural_net(x))
 
         return x
 
