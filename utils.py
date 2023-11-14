@@ -853,12 +853,12 @@ class RegularPolygonPETLORDescriptor(PETLORDescriptor):
                                                 self._end_in_ring_index,
                                                 self._end_in_ring_index + n)
 
-    def get_lor_coordinates(
+    def get_lor_indices(
         self,
         views: None | npt.ArrayLike = None,
         sinogram_order=SinogramSpatialAxisOrder.RVP
-    ) -> tuple[npt.ArrayLike, npt.ArrayLike]:
-        """return the start and end coordinates of all LORs / or a subset of views
+    ) -> tuple[npt.ArrayLike, npt.ArrayLike, npt.ArrayLike, npt.ArrayLike]:
+        """return the start and end indices of all LORs / or a subset of views
 
         Parameters
         ----------
@@ -869,9 +869,7 @@ class RegularPolygonPETLORDescriptor(PETLORDescriptor):
 
         Returns
         -------
-        tuple[npt.ArrayLike, npt.ArrayLike]
-            the start and end coordinates of all LORs / or a subset of views
-            shape (:,:,:,3)
+        start_mods, end_mods, start_inds, end_inds 
         """
 
         if views is None:
@@ -916,10 +914,32 @@ class RegularPolygonPETLORDescriptor(PETLORDescriptor):
             start_inds = self.xp.permute_dims(start_inds, new_order)
             end_inds = self.xp.permute_dims(end_inds, new_order)
 
-            sinogram_spatial_shape = (sinogram_spatial_shape[new_order[0]],
-                                      sinogram_spatial_shape[new_order[1]],
-                                      sinogram_spatial_shape[new_order[2]])
+        return start_mods, end_mods, start_inds, end_inds 
 
+    def get_lor_coordinates(
+        self,
+        views: None | npt.ArrayLike = None,
+        sinogram_order=SinogramSpatialAxisOrder.RVP
+    ) -> tuple[npt.ArrayLike, npt.ArrayLike]:
+
+        """return the start and end coordinates of all LORs / or a subset of views
+
+        Parameters
+        ----------
+        views : None | npt.ArrayLike, optional
+            the views to consider, by default None means all views
+        sinogram_order : SinogramSpatialAxisOrder, optional
+            the order of the sinogram axes, by default SinogramSpatialAxisOrder.RVP
+
+        Returns
+        -------
+        xstart, xend : npt.ArrayLike
+           2 dimensional floating point arrays containing the start and end coordinates of all LORs
+        """
+
+        start_mods, end_mods, start_inds, end_inds = self.get_lor_indices(views, sinogram_order)
+        sinogram_spatial_shape = start_mods.shape
+ 
         start_mods = self.xp.reshape(start_mods, (-1, ))
         start_inds = self.xp.reshape(start_inds, (-1, ))
 
